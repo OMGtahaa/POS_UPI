@@ -7,7 +7,23 @@ document.addEventListener('DOMContentLoaded', () => {
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('./sw.js')
-        .then((reg) => console.log('[Service Worker] Registered successfully:', reg.scope))
+        .then((reg) => {
+          console.log('[Service Worker] Registered successfully:', reg.scope);
+          
+          // Auto-detect service worker updates and trigger an instant page refresh
+          reg.onupdatefound = () => {
+            const installingWorker = reg.installing;
+            if (installingWorker == null) return;
+            installingWorker.onstatechange = () => {
+              if (installingWorker.state === 'installed') {
+                if (navigator.serviceWorker.controller) {
+                  console.log('[Service Worker] New update activated! Auto-refreshing...');
+                  window.location.reload();
+                }
+              }
+            };
+          };
+        })
         .catch((err) => console.error('[Service Worker] Registration failed:', err));
     });
   }
