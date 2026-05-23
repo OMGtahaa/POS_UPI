@@ -525,7 +525,7 @@ html {
 }
 
 .settings-group {
-  margin-bottom: 24px;
+  margin-bottom: clamp(12px, 2.5vh, 20px);
 }
 
 .settings-label {
@@ -624,6 +624,7 @@ html {
   width: 14px;
   height: 14px;
   border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .bank-item-details {
@@ -638,8 +639,12 @@ html {
 
 .bank-item-upi {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: clamp(9px, 2.2vw, 11px);
   color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: clamp(140px, 45vw, 220px);
 }
 
 .bank-item-actions {
