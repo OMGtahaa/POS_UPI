@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Service Worker Registration ---
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=7')
+      navigator.serviceWorker.register('./sw.js?v=9')
         .then((reg) => {
           console.log('[Service Worker] Registered successfully:', reg.scope);
           
@@ -26,6 +26,15 @@ document.addEventListener('DOMContentLoaded', () => {
         })
         .catch((err) => console.error('[Service Worker] Registration failed:', err));
     });
+
+    // Ultimate robust PWA auto-refresh trigger on controller change
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (refreshing) return;
+      refreshing = true;
+      console.log('[PWA Update] New service worker took control! Auto-refreshing page...');
+      window.location.reload();
+    });
   }
 
   // --- State Variables ---
@@ -34,11 +43,11 @@ document.addEventListener('DOMContentLoaded', () => {
   let activeEditBankId = null;
   let activeCardColor = 'card-color-hdfc';
   
-  // Default Seed Data for Bank Accounts
+  // Default Seed Data for Bank Accounts with dynamically assigned unique IDs to prevent DB RLS conflicts
   const DEFAULT_BANKS = [
-    { id: '1', name: 'HDFC Bank', upiId: 'merchant@okhdfcbank', holderName: 'POS MERCHANT', color: 'card-color-hdfc' },
-    { id: '2', name: 'State Bank of India', upiId: 'merchant@oksbi', holderName: 'POS MERCHANT', color: 'card-color-sbi' },
-    { id: '3', name: 'ICICI Bank', upiId: 'merchant@okicici', holderName: 'POS MERCHANT', color: 'card-color-icici' }
+    { id: 'bank_hdfc_' + Math.random().toString(36).substr(2, 9), name: 'HDFC Bank', upiId: 'merchant@okhdfcbank', holderName: 'POS MERCHANT', color: 'card-color-hdfc' },
+    { id: 'bank_sbi_' + Math.random().toString(36).substr(2, 9), name: 'State Bank of India', upiId: 'merchant@oksbi', holderName: 'POS MERCHANT', color: 'card-color-sbi' },
+    { id: 'bank_icici_' + Math.random().toString(36).substr(2, 9), name: 'ICICI Bank', upiId: 'merchant@okicici', holderName: 'POS MERCHANT', color: 'card-color-icici' }
   ];
 
   // Default Seed Data for Merchant Settings (Telegram is fully automated now)
@@ -46,10 +55,94 @@ document.addEventListener('DOMContentLoaded', () => {
     name: 'POS Merchant'
   };
 
-  // State loaded from LocalStorage
-  let bankAccounts = JSON.parse(localStorage.getItem('pos_banks')) || DEFAULT_BANKS;
-  let merchantProfile = JSON.parse(localStorage.getItem('pos_merchant')) || DEFAULT_MERCHANT;
-  let transactionHistory = JSON.parse(localStorage.getItem('pos_history')) || [];
+  // Migration utility to dynamically replace static/clashing seed bank IDs with unique IDs
+  function migrateSeededBankIds() {
+    let migrated = false;
+    const clashingIds = ['1', '2', '3', 'bank_hdfc_init', 'bank_sbi_init', 'bank_icici_init'];
+    
+    bankAccounts = bankAccounts.map(bank => {
+      if (clashingIds.includes(bank.id)) {
+        const typeMap = {
+          '1': 'hdfc', 'bank_hdfc_init': 'hdfc',
+          '2': 'sbi', 'bank_sbi_init': 'sbi',
+          '3': 'icici', 'bank_icici_init': 'icici'
+        };
+        const uniqueId = `bank_${typeMap[bank.id] || 'seed'}_` + Math.random().toString(36).substr(2, 9);
+        console.log(`[Migration] Replacing clashing seeded bank ID ${bank.id} with ${uniqueId}`);
+
+        // Update any tasks in the local sync queue referencing the old clashing ID
+        const queueStr = localStorage.getItem('pos_sync_queue');
+        if (queueStr) {
+          try {
+            let queue = JSON.parse(queueStr);
+            if (Array.isArray(queue)) {
+              let queueChanged = false;
+              queue = queue.map(task => {
+                if (task.payload && task.payload.id === bank.id) {
+                  task.payload.id = uniqueId;
+                  queueChanged = true;
+                }
+                return task;
+              });
+              if (queueChanged) {
+                localStorage.setItem('pos_sync_queue', JSON.stringify(queue));
+              }
+            }
+          } catch (e) {
+            console.error('[Migration] Sync queue mapping failed:', e);
+          }
+        }
+
+        bank.id = uniqueId;
+        migrated = true;
+      }
+      return bank;
+    });
+
+    if (migrated) {
+      localStorage.setItem('pos_banks', JSON.stringify(bankAccounts));
+    }
+  }
+
+  // State loaded defensively from LocalStorage to prevent syntax errors
+  let bankAccounts = DEFAULT_BANKS;
+  try {
+    const localBanks = localStorage.getItem('pos_banks');
+    if (localBanks) {
+      const parsedBanks = JSON.parse(localBanks);
+      if (Array.isArray(parsedBanks)) {
+        bankAccounts = parsedBanks;
+      }
+    }
+  } catch (e) {
+    console.error('[LocalStorage Load] Error parsing banks:', e);
+  }
+
+  let merchantProfile = DEFAULT_MERCHANT;
+  try {
+    const localMerchant = localStorage.getItem('pos_merchant');
+    if (localMerchant) {
+      const parsedMerchant = JSON.parse(localMerchant);
+      if (parsedMerchant && typeof parsedMerchant === 'object') {
+        merchantProfile = parsedMerchant;
+      }
+    }
+  } catch (e) {
+    console.error('[LocalStorage Load] Error parsing merchant:', e);
+  }
+
+  let transactionHistory = [];
+  try {
+    const localHistory = localStorage.getItem('pos_history');
+    if (localHistory) {
+      const parsedHistory = JSON.parse(localHistory);
+      if (Array.isArray(parsedHistory)) {
+        transactionHistory = parsedHistory;
+      }
+    }
+  } catch (e) {
+    console.error('[LocalStorage Load] Error parsing history:', e);
+  }
 
   // Supabase Hardcoded Sync Credentials & State
   const SUPABASE_URL = 'https://tcpbpvdrnaydvyxxrkwj.supabase.co';
@@ -188,6 +281,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (status === 'online') {
       headerSyncIndicator.className = 'sync-indicator-header sync-indicator-online';
+      headerSyncIndicator.style.backgroundColor = '';
+      headerSyncIndicator.style.color = '';
+      headerSyncIndicator.style.borderColor = '';
       syncIndicatorText.innerText = 'Cloud Synced';
       const dot = headerSyncIndicator.querySelector('.sync-dot');
       if (dot) dot.classList.add('sync-dot-active');
@@ -242,6 +338,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // SUPABASE REALTIME CLOUD SYNC ENGINE WITH OFFLINE QUEUE
   // ==========================================================================
   function initSupabase() {
+    if (supabase) return true; // Already initialized!
+
     if (SUPABASE_URL && SUPABASE_KEY && window.supabase) {
       try {
         updateSyncStatusUI('connecting');
@@ -259,6 +357,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Sync database files with localStorage on first login
             await pullCloudDatabase();
+            syncPreExistingLocalData(); // Upload pre-existing local banks/transactions
             subscribeRealtimeSync();
             processSyncQueue();
           } else {
@@ -285,9 +384,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     try {
       // 1. Pull Banks
-      const { data: cloudBanks, error: banksError } = await supabase
+      const { data: cloudBanks, error: banksError } = await withTimeout(supabase
         .from('pos_banks')
-        .select('*');
+        .select('*'), 6000);
         
       if (!banksError && cloudBanks) {
         if (cloudBanks.length > 0) {
@@ -308,10 +407,10 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       // 2. Pull History Logs
-      const { data: cloudHistory, error: historyError } = await supabase
+      const { data: cloudHistory, error: historyError } = await withTimeout(supabase
         .from('pos_history')
         .select('*')
-        .order('timestamp', { ascending: false });
+        .order('timestamp', { ascending: false }), 6000);
         
       if (!historyError && cloudHistory) {
         if (cloudHistory.length > 0) {
@@ -333,6 +432,38 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {
       console.error('[Supabase Pull] Sync failed:', e);
     }
+  }
+
+  // Upload all pre-existing local data to Supabase upon first login
+  function syncPreExistingLocalData() {
+    if (!supabase || !userSession) return;
+
+    // Check if initial sync has already been processed for this login session
+    if (localStorage.getItem('pos_initial_sync_done') === 'true') {
+      console.log('[Supabase Sync] Initial sync already processed. Skipping redundant uploads.');
+      return;
+    }
+    
+    console.log('[Supabase Sync] Enqueuing pre-existing local data for sync...');
+    
+    // 1. Enqueue all local banks
+    bankAccounts.forEach(bank => {
+      const queue = JSON.parse(localStorage.getItem('pos_sync_queue')) || [];
+      if (!queue.some(t => t.table === 'pos_banks' && t.payload.id === bank.id)) {
+        enqueueSyncTask('pos_banks', 'upsert', bank);
+      }
+    });
+
+    // 2. Enqueue all local transactions
+    transactionHistory.forEach(tx => {
+      const queue = JSON.parse(localStorage.getItem('pos_sync_queue')) || [];
+      if (!queue.some(t => t.table === 'pos_history' && t.payload.id === tx.id)) {
+        enqueueSyncTask('pos_history', 'upsert', tx);
+      }
+    });
+
+    // Mark initial sync as completed successfully so it never loops
+    localStorage.setItem('pos_initial_sync_done', 'true');
   }
 
   function subscribeRealtimeSync() {
@@ -426,6 +557,17 @@ document.addEventListener('DOMContentLoaded', () => {
     processSyncQueue();
   }
 
+  // Helper to wrap promises in a standard timeout to prevent infinite hangs in locked web sandboxes
+  function withTimeout(promise, timeoutMs = 6000) {
+    let timeoutId;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error('Request Timeout'));
+      }, timeoutMs);
+    });
+    return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
+  }
+
   let isProcessingQueue = false;
   async function processSyncQueue() {
     if (isProcessingQueue) return;
@@ -449,79 +591,81 @@ document.addEventListener('DOMContentLoaded', () => {
 
     console.log(`[Sync Queue] Processing ${queue.length} pending task(s)...`);
 
-    while (queue.length > 0) {
-      const task = queue[0];
-      try {
-        let success = false;
-        
-        if (task.table === 'pos_banks') {
-          if (task.action === 'delete') {
-            const { error } = await supabase
-              .from('pos_banks')
-              .delete()
-              .eq('id', task.payload.id);
-            if (!error) success = true;
-            else console.error('[Sync Queue] Bank delete error:', error);
-          } else {
-            const { error } = await supabase
-              .from('pos_banks')
-              .upsert({
-                id: task.payload.id,
-                name: task.payload.name,
-                upi_id: task.payload.upiId,
-                holder_name: task.payload.holderName,
-                color: task.payload.color,
-                user_id: userSession.user.id
-              });
-            if (!error) success = true;
-            else console.error('[Sync Queue] Bank upsert error:', error);
+    try {
+      while (queue.length > 0) {
+        const task = queue[0];
+        try {
+          let success = false;
+          
+          if (task.table === 'pos_banks') {
+            if (task.action === 'delete') {
+              const { error } = await withTimeout(supabase
+                .from('pos_banks')
+                .delete()
+                .eq('id', task.payload.id), 6000);
+              if (!error) success = true;
+              else console.error('[Sync Queue] Bank delete error:', error);
+            } else {
+              const { error } = await withTimeout(supabase
+                .from('pos_banks')
+                .upsert({
+                  id: task.payload.id,
+                  name: task.payload.name,
+                  upi_id: task.payload.upiId,
+                  holder_name: task.payload.holderName,
+                  color: task.payload.color,
+                  user_id: userSession.user.id
+                }), 6000);
+              if (!error) success = true;
+              else console.error('[Sync Queue] Bank upsert error:', error);
+            }
+          } else if (task.table === 'pos_history') {
+            if (task.action === 'delete') {
+              const { error } = await withTimeout(supabase
+                .from('pos_history')
+                .delete()
+                .eq('id', task.payload.id), 6000);
+              if (!error) success = true;
+              else console.error('[Sync Queue] Transaction delete error:', error);
+            } else {
+              const { error } = await withTimeout(supabase
+                .from('pos_history')
+                .upsert({
+                  id: task.payload.id,
+                  amount: task.payload.amount,
+                  bank_name: task.payload.bankName,
+                  upi_id: task.payload.upiId,
+                  note: task.payload.note,
+                  status: task.payload.status,
+                  timestamp: task.payload.timestamp,
+                  user_id: userSession.user.id
+                }), 6000);
+              if (!error) success = true;
+              else console.error('[Sync Queue] Transaction upsert error:', error);
+            }
           }
-        } else if (task.table === 'pos_history') {
-          if (task.action === 'delete') {
-            const { error } = await supabase
-              .from('pos_history')
-              .delete()
-              .eq('id', task.payload.id);
-            if (!error) success = true;
-            else console.error('[Sync Queue] Transaction delete error:', error);
-          } else {
-            const { error } = await supabase
-              .from('pos_history')
-              .upsert({
-                id: task.payload.id,
-                amount: task.payload.amount,
-                bank_name: task.payload.bankName,
-                upi_id: task.payload.upiId,
-                note: task.payload.note,
-                status: task.payload.status,
-                timestamp: task.payload.timestamp,
-                user_id: userSession.user.id
-              });
-            if (!error) success = true;
-            else console.error('[Sync Queue] Transaction upsert error:', error);
-          }
-        }
 
-        if (success) {
-          queue.shift(); // Remove completed task
-          localStorage.setItem('pos_sync_queue', JSON.stringify(queue));
-        } else {
-          console.warn('[Sync Queue] Task failed to write, pausing queue retry.');
+          if (success) {
+            queue.shift(); // Remove completed task
+            localStorage.setItem('pos_sync_queue', JSON.stringify(queue));
+          } else {
+            console.warn('[Sync Queue] Task failed to write, pausing queue retry.');
+            break;
+          }
+        } catch (e) {
+          console.warn('[Sync Queue] Network drop during sync processing:', e);
           break;
         }
-      } catch (e) {
-        console.warn('[Sync Queue] Network drop during sync processing:', e);
-        break;
       }
-    }
-
-    isProcessingQueue = false;
-    
-    const finalQueue = JSON.parse(localStorage.getItem('pos_sync_queue')) || [];
-    if (finalQueue.length === 0) {
-      updateSyncStatusUI('online');
-    } else {
-      updateSyncStatusUI('connecting');
+    } finally {
+      isProcessingQueue = false;
+      
+      const finalQueue = JSON.parse(localStorage.getItem('pos_sync_queue')) || [];
+      if (finalQueue.length === 0) {
+        updateSyncStatusUI('online');
+      } else {
+        updateSyncStatusUI('connecting');
+      }
     }
   }
   
@@ -1227,7 +1371,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (confirm('Are you sure you want to sign out of Cloud Sync? Local backup will be preserved.')) {
         try {
           const { error } = await supabase.auth.signOut();
-          if (error) console.error('[Supabase Auth] Logout error:', error);
+          if (error) {
+            console.error('[Supabase Auth] Logout error:', error);
+          } else {
+            localStorage.removeItem('pos_initial_sync_done');
+          }
         } catch (e) {
           console.error('[Supabase Auth] Sign out failed:', e);
         }
@@ -1238,8 +1386,22 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================================================================
   // INITIALIZE ON START
   // ==========================================================================
-  initSupabase(); // Load sync connections
+  
+  // 1. Instantly display correct view to prevent page-refresh POS main-page jump!
+  try {
+    migrateSeededBankIds(); // Run self-healing migration to replace clashing seeded bank IDs and avoid DB RLS errors
+    updateAmountDisplay();
+    router();
+  } catch (e) {
+    console.error('[POS Initialization] Routing error:', e);
+  }
+
+  // 2. Load Supabase cloud connections in the background
+  try {
+    initSupabase();
+  } catch (e) {
+    console.error('[POS Initialization] Supabase startup failed:', e);
+  }
+
   window.addEventListener('online', processSyncQueue); // Queue worker hook
-  updateAmountDisplay();
-  switchScreen('#/pos'); // Load main POS interface
 });
