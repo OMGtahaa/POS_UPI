@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Service Worker Registration ---
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=9')
+      navigator.serviceWorker.register('./sw.js?v=12')
         .then((reg) => {
           console.log('[Service Worker] Registered successfully:', reg.scope);
           
@@ -365,6 +365,24 @@ document.addEventListener('DOMContentLoaded', () => {
             if (authFormLoggedOut) authFormLoggedOut.style.display = 'block';
             if (authFormLoggedIn) authFormLoggedIn.style.display = 'none';
             if (loggedInEmailDisplay) loggedInEmailDisplay.value = '';
+            
+            // Centralized Clean Slate Reset on Sign Out
+            localStorage.removeItem('pos_initial_sync_done');
+            localStorage.removeItem('pos_sync_queue');
+            
+            // Reset to default seed banks & clear history from LocalStorage
+            localStorage.setItem('pos_banks', JSON.stringify(DEFAULT_BANKS));
+            localStorage.setItem('pos_history', JSON.stringify([]));
+            
+            // Reset local memory state variables
+            bankAccounts = DEFAULT_BANKS;
+            transactionHistory = [];
+            
+            // Re-render UI views immediately
+            renderSavedBanksList();
+            renderSalesLogs();
+            resetBankForm();
+            
             updateSyncStatusUI('offline');
             unsubscribeRealtimeSync();
           }
@@ -1368,14 +1386,10 @@ document.addEventListener('DOMContentLoaded', () => {
     authLogoutBtn.addEventListener('click', async () => {
       if (!supabase) return;
       
-      if (confirm('Are you sure you want to sign out of Cloud Sync? Local backup will be preserved.')) {
+      if (confirm('Are you sure you want to sign out? Your local device data cache will be cleared for privacy.')) {
         try {
           const { error } = await supabase.auth.signOut();
-          if (error) {
-            console.error('[Supabase Auth] Logout error:', error);
-          } else {
-            localStorage.removeItem('pos_initial_sync_done');
-          }
+          if (error) console.error('[Supabase Auth] Logout error:', error);
         } catch (e) {
           console.error('[Supabase Auth] Sign out failed:', e);
         }
