@@ -1,12 +1,12 @@
 /* ==========================================================================
-   POS UPI PAY TERMINAL - SIMPLIFIED CORE LOGIC WITH HASH ROUTING
+   POS UPI PAY TERMINAL - SIMPLIFIED CORE LOGIC WITH REALTIME SYNC & LOGS
    ========================================================================== */
 
 document.addEventListener('DOMContentLoaded', () => {
   // --- Service Worker Registration ---
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=6')
+      navigator.serviceWorker.register('./sw.js?v=7')
         .then((reg) => {
           console.log('[Service Worker] Registered successfully:', reg.scope);
           
@@ -41,7 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
     { id: '3', name: 'ICICI Bank', upiId: 'merchant@okicici', holderName: 'POS MERCHANT', color: 'card-color-icici' }
   ];
 
-  // Default Seed Data for Merchant Settings (Telegram removed)
+  // Default Seed Data for Merchant Settings (Telegram is fully automated now)
   const DEFAULT_MERCHANT = {
     name: 'POS Merchant'
   };
@@ -50,6 +50,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let bankAccounts = JSON.parse(localStorage.getItem('pos_banks')) || DEFAULT_BANKS;
   let merchantProfile = JSON.parse(localStorage.getItem('pos_merchant')) || DEFAULT_MERCHANT;
   let transactionHistory = JSON.parse(localStorage.getItem('pos_history')) || [];
+
+
 
   // If local storage is empty, initialize it
   if (!localStorage.getItem('pos_banks')) localStorage.setItem('pos_banks', JSON.stringify(bankAccounts));
@@ -65,6 +67,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const amountDisplay = document.getElementById('pos-amount-val');
   const keypad = document.getElementById('pos-keypad');
+  
+
   
   // Bank Selector View Elements
   const selectBankAmountVal = document.getElementById('select-bank-amount-val');
@@ -88,11 +92,18 @@ document.addEventListener('DOMContentLoaded', () => {
   const saveBankBtn = document.getElementById('save-bank-btn');
   const cancelBankBtn = document.getElementById('cancel-bank-btn');
   const savedBanksListContainer = document.getElementById('saved-banks-list-container');
+
+
   
-  // Sales Log inside Settings Elements
-  const historyListContainer = document.getElementById('history-list-container');
+  // Reporting Dashboard Elements
+  const filterFy = document.getElementById('filter-fy');
+  const filterMonth = document.getElementById('filter-month');
+  const statsDailyVal = document.getElementById('stats-daily-val');
+  const statsMonthlyVal = document.getElementById('stats-monthly-val');
+  const statsMonthlyLabel = document.getElementById('stats-monthly-label');
   const statsTotalVal = document.getElementById('stats-total-val');
   const statsCountVal = document.getElementById('stats-count-val');
+  const historyListContainer = document.getElementById('history-list-container');
   const clearHistoryBtn = document.getElementById('clear-history-btn');
   
   let currentQr = null; // QRious QR code instance
@@ -148,14 +159,47 @@ document.addEventListener('DOMContentLoaded', () => {
     window.scrollTo(0, 0);
   }
 
-  // Bind hashchange listener to handle back buttons and state shifts
   window.addEventListener('hashchange', router);
   
-  // Set default hash on start
-  if (!window.location.hash) {
-    window.location.hash = '#/pos';
-  } else {
-    router(); // Trigger router on reload if hash exists
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  // ==========================================================================
+  // NAVIGATION CONTROLLER
+  // ==========================================================================
+  function switchScreen(screenKey) {
+    // Set active screens
+    Object.keys(views).forEach(key => {
+      if (key === screenKey) {
+        views[key].classList.add('active');
+      } else {
+        views[key].classList.remove('active');
+      }
+    });
+
+    // Run screen-specific render initialization
+    if (screenKey === '#/pos') {
+      renderBankSwiper();
+    } else if (screenKey === '#/settings') {
+      loadSettingsForms();
+    } else if (screenKey === '#/select-bank') {
+      initBankSelectorView();
+    } else if (screenKey === '#/qr') {
+      initQRView();
+    }
   }
 
   // ==========================================================================
@@ -197,7 +241,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (value === 'decimal') {
-      // Append period if no decimal point exists
       if (!currentAmountStr.includes('.')) {
         currentAmountStr += '.';
       }
@@ -216,7 +259,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentAmountStr.includes('.')) {
           let decimalPart = currentAmountStr.split('.')[1];
           if (decimalPart && decimalPart.length >= 2) {
-            // Already has 2 decimals, ignore new numbers
             return;
           }
         }
@@ -298,6 +340,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Dummy swiper renderer function for backward compatibility
+  function renderBankSwiper() {}
+
   // ==========================================================================
   // NPCI UPI QR SCREEN LOGIC (P2P COMPLIANT STRING BUILDER)
   // ==========================================================================
@@ -319,13 +364,6 @@ document.addEventListener('DOMContentLoaded', () => {
     qrDisplayPayeeId.innerText = activeSelectedBank.upiId;
 
     // --- Standard NPCI-Compliant P2P UPI deep link ---
-    // Mandatory fields:
-    // pa = Payee UPI VPA
-    // pn = Payee Name
-    // am = Amount
-    // cu = Currency (INR)
-    // NOTE: We omit 'tn' (notes) and 'tr' (ref) because P2P personal VPAs throw 
-    // "payment mode error" on Google Pay & PhonePe when dynamic business fields are present.
     let payeeNameEncoded = encodeURIComponent(merchantProfile.name);
     let npciUpiUrl = `upi://pay?pa=${activeSelectedBank.upiId}&pn=${payeeNameEncoded}&am=${amount.toFixed(2)}&cu=INR`;
     
@@ -338,7 +376,7 @@ document.addEventListener('DOMContentLoaded', () => {
         size: 240,
         background: '#ffffff',
         foreground: '#0f172a',
-        level: 'M', // Medium error correction is best for speed and scanning reliability
+        level: 'M',
         value: npciUpiUrl
       });
     } else {
@@ -375,14 +413,20 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================================================================
   // SETTINGS & LOGS VIEW LOGIC (CONSOLIDATED HUB)
   // ==========================================================================
-  function initSettingsView() {
+  function loadSettingsForms() {
     // Load profile
     merchantNameInput.value = merchantProfile.name;
+    
+
     
     // Clear forms & re-render lists
     resetBankForm();
     renderSavedBanksList();
     renderSalesLogs();
+  }
+
+  function initSettingsView() {
+    loadSettingsForms();
   }
 
   // Save Merchant Profile Business Name
@@ -435,7 +479,7 @@ document.addEventListener('DOMContentLoaded', () => {
   cancelBankBtn.addEventListener('click', resetBankForm);
 
   // Save/Edit bank accounts
-  saveBankBtn.addEventListener('click', () => {
+  saveBankBtn.addEventListener('click', async () => {
     const name = bankNameInput.value.trim();
     const upiId = bankUpiInput.value.trim().toLowerCase();
     const holderName = bankHolderInput.value.trim() || merchantProfile.name;
@@ -450,28 +494,34 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    let bankRecord = null;
+
     if (activeEditBankId) {
       // Edit Account details
       bankAccounts = bankAccounts.map(bank => {
         if (bank.id === activeEditBankId) {
-          return { id: activeEditBankId, name, upiId, holderName, color: activeCardColor };
+          bankRecord = { id: activeEditBankId, name, upiId, holderName, color: activeCardColor };
+          return bankRecord;
         }
         return bank;
       });
       activeEditBankId = null;
     } else {
       // Add new account
-      const newBank = {
+      bankRecord = {
         id: 'bank_' + Date.now(),
         name,
         upiId,
         holderName,
         color: activeCardColor
       };
-      bankAccounts.push(newBank);
+      bankAccounts.push(bankRecord);
     }
 
     localStorage.setItem('pos_banks', JSON.stringify(bankAccounts));
+    
+
+
     resetBankForm();
     renderSavedBanksList();
   });
@@ -528,18 +578,21 @@ document.addEventListener('DOMContentLoaded', () => {
           saveBankBtn.innerText = 'Update Bank Details';
           cancelBankBtn.style.display = 'block';
           
-          // Scroll and focus on forms
           bankNameInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
           bankNameInput.focus();
         }
       });
 
       // Bind delete triggers
-      row.querySelector('.bank-item-btn-delete').addEventListener('click', (e) => {
+      row.querySelector('.bank-item-btn-delete').addEventListener('click', async (e) => {
         const id = e.currentTarget.dataset.id;
         if (confirm('Are you sure you want to delete this bank account?')) {
+          const deletedBank = bankAccounts.find(b => b.id === id);
           bankAccounts = bankAccounts.filter(b => b.id !== id);
           localStorage.setItem('pos_banks', JSON.stringify(bankAccounts));
+          
+
+
           renderSavedBanksList();
         }
       });
@@ -548,32 +601,129 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Render sales logs inside settings screen (Category 1)
+
+
+  // ==========================================================================
+  // SALES LOG REPORTING & SELECTOR FILTERS
+  // ==========================================================================
   function renderSalesLogs() {
     historyListContainer.innerHTML = '';
 
-    // Calculate sum metrics
-    let totalSales = 0;
+    const selectedFy = filterFy.value; // "all", "FY2526", "FY2627"
+    const selectedMonth = filterMonth.value; // "all", "04", "05", etc.
+    
+    // --- Parse Date Bounds for Financial Years ---
+    // Indian FY spans April 1st to March 31st of the next calendar year
+    let startYear, endYear;
+    if (selectedFy === 'FY2526') {
+      startYear = 2025;
+      endYear = 2026;
+    } else if (selectedFy === 'FY2627') {
+      startYear = 2026;
+      endYear = 2027;
+    }
+
+    // Filter transaction list based on select dropdowns
+    let filteredHistory = transactionHistory.filter(tx => {
+      const txDate = new Date(tx.timestamp);
+      const txYear = txDate.getFullYear();
+      const txMonthStr = String(txDate.getMonth() + 1).padStart(2, '0'); // "01"-"12"
+      
+      // 1. Filter by Financial Year
+      if (selectedFy !== 'all') {
+        const txTime = txDate.getTime();
+        const fyStart = new Date(startYear, 3, 1, 0, 0, 0, 0).getTime(); // April 1st (Month 3 = April in JS)
+        const fyEnd = new Date(endYear, 2, 31, 23, 59, 59, 999).getTime(); // March 31st (Month 2 = March in JS)
+        
+        if (txTime < fyStart || txTime > fyEnd) {
+          return false;
+        }
+      }
+
+      // 2. Filter by Month
+      if (selectedMonth !== 'all') {
+        if (txMonthStr !== selectedMonth) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+
+    // --- CALCULATE ANALYTICS ---
+    // Daily Total: overall today's sales (independent of year dropdown selection, always today!)
+    let dailyTotal = 0;
+    let todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    let todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+
     transactionHistory.forEach(tx => {
-      if (tx.status === 'paid') {
-        totalSales += parseFloat(tx.amount);
+      const txDate = new Date(tx.timestamp);
+      if (txDate.getTime() >= todayStart.getTime() && txDate.getTime() <= todayEnd.getTime() && tx.status === 'paid') {
+        dailyTotal += tx.amount;
       }
     });
+
+    // Monthly Total: Sum of the selected month's sales in the selected FY.
+    // If "All Months" is selected, defaults to the overall sum matching the active FY.
+    let monthlyTotal = 0;
+    filteredHistory.forEach(tx => {
+      if (tx.status === 'paid') {
+        monthlyTotal += tx.amount;
+      }
+    });
+
+    // All Time Total: Absolute overall sum of all paid transactions ever logged!
+    let allTimeTotal = 0;
+    transactionHistory.forEach(tx => {
+      if (tx.status === 'paid') {
+        allTimeTotal += tx.amount;
+      }
+    });
+
+    // Render Stats values formatted to Indian Rupee standards
+    statsDailyVal.innerText = new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(dailyTotal);
+
+    statsMonthlyVal.innerText = new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(monthlyTotal);
 
     statsTotalVal.innerText = new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
-      minimumFractionDigits: 2
-    }).format(totalSales);
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(allTimeTotal);
 
-    statsCountVal.innerText = transactionHistory.length;
+    // Update dynamic Monthly card label
+    if (selectedMonth !== 'all') {
+      const monthNames = {
+        "04": "Apr", "05": "May", "06": "Jun", "07": "Jul", "08": "Aug", "09": "Sep",
+        "10": "Oct", "11": "Nov", "12": "Dec", "01": "Jan", "02": "Feb", "03": "Mar"
+      };
+      statsMonthlyLabel.innerText = `${monthNames[selectedMonth]} Sales`;
+    } else {
+      statsMonthlyLabel.innerText = selectedFy !== 'all' ? 'FY Sales' : 'Filter Sum';
+    }
 
-    if (transactionHistory.length === 0) {
-      historyListContainer.innerHTML = `<div class="no-history-prompt">No transaction logs recorded.</div>`;
+    statsCountVal.innerText = filteredHistory.length;
+
+    // Render filtered list rows
+    if (filteredHistory.length === 0) {
+      historyListContainer.innerHTML = `<div class="no-history-prompt">No transaction logs match active filters.</div>`;
       return;
     }
 
-    transactionHistory.forEach(tx => {
+    filteredHistory.forEach(tx => {
       const item = document.createElement('div');
       item.className = 'history-item';
       
@@ -601,6 +751,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Bind change listeners to reporting filters
+  filterFy.addEventListener('change', renderSalesLogs);
+  filterMonth.addEventListener('change', renderSalesLogs);
+
   // Clear logs histories
   clearHistoryBtn.addEventListener('click', () => {
     if (transactionHistory.length === 0) return;
@@ -612,4 +766,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // ==========================================================================
+  // INITIALIZE ON START
+  // ==========================================================================
+  updateAmountDisplay();
+  switchScreen('#/pos'); // Load main POS interface
 });
