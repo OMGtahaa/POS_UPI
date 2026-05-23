@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Service Worker Registration ---
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=5')
+      navigator.serviceWorker.register('./sw.js?v=6')
         .then((reg) => {
           console.log('[Service Worker] Registered successfully:', reg.scope);
           
