@@ -621,10 +621,12 @@ html {
 }
 
 .bank-item-color-indicator {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  flex-shrink: 0;
+  width: 14px !important;
+  height: 14px !important;
+  min-width: 14px !important;
+  min-height: 14px !important;
+  border-radius: 50% !important;
+  flex-shrink: 0 !important;
 }
 
 .bank-item-details {

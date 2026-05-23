@@ -1,8 +1,8 @@
-const CACHE_NAME = 'upi-pos-v2';
+const CACHE_NAME = 'upi-pos-v3';
 const ASSETS = [
   './',
   './index.html',
-  './css/styles.css',
+  './css/styles.v2.css',
   './js/app.js',
   './lib/qrious.min.js',
   './manifest.json',
