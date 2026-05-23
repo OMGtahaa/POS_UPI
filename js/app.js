@@ -51,9 +51,13 @@ document.addEventListener('DOMContentLoaded', () => {
   let merchantProfile = JSON.parse(localStorage.getItem('pos_merchant')) || DEFAULT_MERCHANT;
   let transactionHistory = JSON.parse(localStorage.getItem('pos_history')) || [];
 
-
-
-  // If local storage is empty, initialize it
+  // Supabase Hardcoded Sync Credentials & State
+  const SUPABASE_URL = 'https://tcpbpvdrnaydvyxxrkwj.supabase.co';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRjcGJwdmRybmF5ZHZ5eHhya3dqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1NDg0NzMsImV4cCI6MjA5NTEyNDQ3M30.0pRHjD0j2cE8ZAW2LiS6Eh_O1MtWMuBGUqLnIYwtNs4';
+  let supabase = null;
+  let userSession = null;
+  let bankRealtimeChannel = null;
+  let historyRealtimeChannel = null;
   if (!localStorage.getItem('pos_banks')) localStorage.setItem('pos_banks', JSON.stringify(bankAccounts));
   if (!localStorage.getItem('pos_merchant')) localStorage.setItem('pos_merchant', JSON.stringify(merchantProfile));
 
@@ -67,6 +71,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const amountDisplay = document.getElementById('pos-amount-val');
   const keypad = document.getElementById('pos-keypad');
+
+  // POS Header Sync Elements
+  const headerSyncIndicator = document.getElementById('header-sync-indicator');
+  const syncIndicatorText = document.getElementById('sync-indicator-text');
   
 
   
@@ -92,6 +100,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const saveBankBtn = document.getElementById('save-bank-btn');
   const cancelBankBtn = document.getElementById('cancel-bank-btn');
   const savedBanksListContainer = document.getElementById('saved-banks-list-container');
+
+  // Cloud Database Sync Login Inputs
+  const authEmailInput = document.getElementById('settings-auth-email');
+  const authPasswordInput = document.getElementById('settings-auth-password');
+  const authLoginBtn = document.getElementById('auth-login-btn');
+  const authSignupBtn = document.getElementById('auth-signup-btn');
+  const authLogoutBtn = document.getElementById('auth-logout-btn');
+  const authStatusContainer = document.getElementById('auth-status-container');
+  const authFormLoggedOut = document.getElementById('auth-form-logged-out');
+  const authFormLoggedIn = document.getElementById('auth-form-logged-in');
+  const loggedInEmailDisplay = document.getElementById('logged-in-email-display');
 
 
   
@@ -160,6 +179,351 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   window.addEventListener('hashchange', router);
+
+  // ==========================================================================
+  // SYNC STATUS UI MANAGER
+  // ==========================================================================
+  function updateSyncStatusUI(status) {
+    if (!headerSyncIndicator || !syncIndicatorText || !authStatusContainer) return;
+
+    if (status === 'online') {
+      headerSyncIndicator.className = 'sync-indicator-header sync-indicator-online';
+      syncIndicatorText.innerText = 'Cloud Synced';
+      const dot = headerSyncIndicator.querySelector('.sync-dot');
+      if (dot) dot.classList.add('sync-dot-active');
+      
+      authStatusContainer.innerText = '🔒 Synced & Logged In (Realtime Active)';
+      authStatusContainer.style.background = 'rgba(16, 185, 129, 0.1)';
+      authStatusContainer.style.color = 'var(--color-emerald)';
+      authStatusContainer.style.borderColor = 'rgba(16, 185, 129, 0.2)';
+    } else if (status === 'syncing') {
+      headerSyncIndicator.className = 'sync-indicator-header sync-indicator-offline';
+      headerSyncIndicator.style.backgroundColor = 'rgba(245, 158, 11, 0.1)';
+      headerSyncIndicator.style.color = '#f59e0b';
+      headerSyncIndicator.style.borderColor = 'rgba(245, 158, 11, 0.2)';
+      syncIndicatorText.innerText = 'Syncing...';
+      const dot = headerSyncIndicator.querySelector('.sync-dot');
+      if (dot) dot.classList.add('sync-dot-active');
+      
+      authStatusContainer.innerText = '🔄 Syncing Queue Transactions...';
+      authStatusContainer.style.background = 'rgba(245, 158, 11, 0.1)';
+      authStatusContainer.style.color = '#f59e0b';
+      authStatusContainer.style.borderColor = 'rgba(245, 158, 11, 0.2)';
+    } else if (status === 'connecting') {
+      headerSyncIndicator.className = 'sync-indicator-header sync-indicator-offline';
+      headerSyncIndicator.style.backgroundColor = 'rgba(245, 158, 11, 0.1)';
+      headerSyncIndicator.style.color = '#f59e0b';
+      headerSyncIndicator.style.borderColor = 'rgba(245, 158, 11, 0.2)';
+      syncIndicatorText.innerText = 'Pending Sync';
+      const dot = headerSyncIndicator.querySelector('.sync-dot');
+      if (dot) dot.classList.add('sync-dot-active');
+      
+      authStatusContainer.innerText = '🔄 Connection Idle. Waiting to sync queue...';
+      authStatusContainer.style.background = 'rgba(245, 158, 11, 0.1)';
+      authStatusContainer.style.color = '#f59e0b';
+      authStatusContainer.style.borderColor = 'rgba(245, 158, 11, 0.2)';
+    } else {
+      headerSyncIndicator.className = 'sync-indicator-header sync-indicator-offline';
+      headerSyncIndicator.style.backgroundColor = '';
+      headerSyncIndicator.style.color = '';
+      headerSyncIndicator.style.borderColor = '';
+      syncIndicatorText.innerText = 'Local Only';
+      const dot = headerSyncIndicator.querySelector('.sync-dot');
+      if (dot) dot.classList.remove('sync-dot-active');
+      
+      authStatusContainer.innerText = 'Offline Mode (Saving on device only)';
+      authStatusContainer.style.background = '';
+      authStatusContainer.style.color = '';
+      authStatusContainer.style.borderColor = '';
+    }
+  }
+
+  // ==========================================================================
+  // SUPABASE REALTIME CLOUD SYNC ENGINE WITH OFFLINE QUEUE
+  // ==========================================================================
+  function initSupabase() {
+    if (SUPABASE_URL && SUPABASE_KEY && window.supabase) {
+      try {
+        updateSyncStatusUI('connecting');
+        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        
+        // Listen to Auth State Changes
+        supabase.auth.onAuthStateChange(async (event, session) => {
+          userSession = session;
+          if (session && session.user) {
+            console.log('[Supabase Auth] User signed in:', session.user.email);
+            if (loggedInEmailDisplay) loggedInEmailDisplay.value = session.user.email;
+            if (authFormLoggedOut) authFormLoggedOut.style.display = 'none';
+            if (authFormLoggedIn) authFormLoggedIn.style.display = 'block';
+            updateSyncStatusUI('online');
+            
+            // Sync database files with localStorage on first login
+            await pullCloudDatabase();
+            subscribeRealtimeSync();
+            processSyncQueue();
+          } else {
+            console.log('[Supabase Auth] User signed out');
+            if (authFormLoggedOut) authFormLoggedOut.style.display = 'block';
+            if (authFormLoggedIn) authFormLoggedIn.style.display = 'none';
+            if (loggedInEmailDisplay) loggedInEmailDisplay.value = '';
+            updateSyncStatusUI('offline');
+            unsubscribeRealtimeSync();
+          }
+        });
+        return true;
+      } catch (e) {
+        console.error('[Supabase Init] Error:', e);
+      }
+    }
+    supabase = null;
+    updateSyncStatusUI('offline');
+    return false;
+  }
+
+  async function pullCloudDatabase() {
+    if (!supabase || !userSession) return;
+    
+    try {
+      // 1. Pull Banks
+      const { data: cloudBanks, error: banksError } = await supabase
+        .from('pos_banks')
+        .select('*');
+        
+      if (!banksError && cloudBanks) {
+        if (cloudBanks.length > 0) {
+          // Format cloud columns to JS state variables
+          bankAccounts = cloudBanks.map(b => ({
+            id: b.id,
+            name: b.name,
+            upiId: b.upi_id,
+            holderName: b.holder_name,
+            color: b.color
+          }));
+          localStorage.setItem('pos_banks', JSON.stringify(bankAccounts));
+          renderSavedBanksList();
+          renderBankSwiper();
+        }
+      } else {
+        console.error('[Supabase Pull] Banks error:', banksError);
+      }
+
+      // 2. Pull History Logs
+      const { data: cloudHistory, error: historyError } = await supabase
+        .from('pos_history')
+        .select('*')
+        .order('timestamp', { ascending: false });
+        
+      if (!historyError && cloudHistory) {
+        if (cloudHistory.length > 0) {
+          transactionHistory = cloudHistory.map(h => ({
+            id: h.id,
+            amount: parseFloat(h.amount),
+            bankName: h.bank_name,
+            upiId: h.upi_id,
+            note: h.note,
+            status: h.status,
+            timestamp: h.timestamp
+          }));
+          localStorage.setItem('pos_history', JSON.stringify(transactionHistory));
+          renderSalesLogs();
+        }
+      } else {
+        console.error('[Supabase Pull] History error:', historyError);
+      }
+    } catch (e) {
+      console.error('[Supabase Pull] Sync failed:', e);
+    }
+  }
+
+  function subscribeRealtimeSync() {
+    if (!supabase || !userSession) return;
+    
+    unsubscribeRealtimeSync();
+
+    console.log('[Supabase Realtime] Subscribing to database updates...');
+    
+    bankRealtimeChannel = supabase
+      .channel('public:pos_banks')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pos_banks' }, async (payload) => {
+        console.log('[Supabase Realtime] Bank change received:', payload);
+        
+        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+          const cloudBank = payload.new;
+          const localBankIndex = bankAccounts.findIndex(b => b.id === cloudBank.id);
+          const formattedBank = {
+            id: cloudBank.id,
+            name: cloudBank.name,
+            upiId: cloudBank.upi_id,
+            holderName: cloudBank.holder_name,
+            color: cloudBank.color
+          };
+
+          if (localBankIndex >= 0) {
+            bankAccounts[localBankIndex] = formattedBank;
+          } else {
+            bankAccounts.push(formattedBank);
+          }
+        } else if (payload.eventType === 'DELETE') {
+          bankAccounts = bankAccounts.filter(b => b.id !== payload.old.id);
+        }
+        
+        localStorage.setItem('pos_banks', JSON.stringify(bankAccounts));
+        renderSavedBanksList();
+        renderBankSwiper();
+      })
+      .subscribe();
+
+    historyRealtimeChannel = supabase
+      .channel('public:pos_history')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pos_history' }, async (payload) => {
+        console.log('[Supabase Realtime] Sales log change received:', payload);
+        
+        if (payload.eventType === 'INSERT') {
+          const cloudTx = payload.new;
+          if (!transactionHistory.some(t => t.id === cloudTx.id)) {
+            transactionHistory.unshift({
+              id: cloudTx.id,
+              amount: parseFloat(cloudTx.amount),
+              bankName: cloudTx.bank_name,
+              upiId: cloudTx.upi_id,
+              note: cloudTx.note,
+              status: cloudTx.status,
+              timestamp: cloudTx.timestamp
+            });
+            localStorage.setItem('pos_history', JSON.stringify(transactionHistory));
+            renderSalesLogs();
+          }
+        } else if (payload.eventType === 'DELETE') {
+          transactionHistory = transactionHistory.filter(t => t.id !== payload.old.id);
+          localStorage.setItem('pos_history', JSON.stringify(transactionHistory));
+          renderSalesLogs();
+        }
+      })
+      .subscribe();
+  }
+
+  function unsubscribeRealtimeSync() {
+    if (supabase) {
+      if (bankRealtimeChannel) supabase.removeChannel(bankRealtimeChannel);
+      if (historyRealtimeChannel) supabase.removeChannel(historyRealtimeChannel);
+    }
+    bankRealtimeChannel = null;
+    historyRealtimeChannel = null;
+  }
+
+  // ==========================================================================
+  // OFFLINE SYNC QUEUE MANAGEMENT
+  // ==========================================================================
+  function enqueueSyncTask(table, action, payload) {
+    const queue = JSON.parse(localStorage.getItem('pos_sync_queue')) || [];
+    const taskId = 'sq_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+    
+    // Add task to local queue
+    queue.push({ id: taskId, table, action, payload });
+    localStorage.setItem('pos_sync_queue', JSON.stringify(queue));
+    
+    // Attempt processing
+    processSyncQueue();
+  }
+
+  let isProcessingQueue = false;
+  async function processSyncQueue() {
+    if (isProcessingQueue) return;
+    if (!supabase || !userSession) {
+      updateSyncStatusUI('offline');
+      return;
+    }
+    if (!navigator.onLine) {
+      updateSyncStatusUI('offline');
+      return;
+    }
+
+    const queue = JSON.parse(localStorage.getItem('pos_sync_queue')) || [];
+    if (queue.length === 0) {
+      updateSyncStatusUI('online');
+      return;
+    }
+
+    isProcessingQueue = true;
+    updateSyncStatusUI('syncing');
+
+    console.log(`[Sync Queue] Processing ${queue.length} pending task(s)...`);
+
+    while (queue.length > 0) {
+      const task = queue[0];
+      try {
+        let success = false;
+        
+        if (task.table === 'pos_banks') {
+          if (task.action === 'delete') {
+            const { error } = await supabase
+              .from('pos_banks')
+              .delete()
+              .eq('id', task.payload.id);
+            if (!error) success = true;
+            else console.error('[Sync Queue] Bank delete error:', error);
+          } else {
+            const { error } = await supabase
+              .from('pos_banks')
+              .upsert({
+                id: task.payload.id,
+                name: task.payload.name,
+                upi_id: task.payload.upiId,
+                holder_name: task.payload.holderName,
+                color: task.payload.color,
+                user_id: userSession.user.id
+              });
+            if (!error) success = true;
+            else console.error('[Sync Queue] Bank upsert error:', error);
+          }
+        } else if (task.table === 'pos_history') {
+          if (task.action === 'delete') {
+            const { error } = await supabase
+              .from('pos_history')
+              .delete()
+              .eq('id', task.payload.id);
+            if (!error) success = true;
+            else console.error('[Sync Queue] Transaction delete error:', error);
+          } else {
+            const { error } = await supabase
+              .from('pos_history')
+              .upsert({
+                id: task.payload.id,
+                amount: task.payload.amount,
+                bank_name: task.payload.bankName,
+                upi_id: task.payload.upiId,
+                note: task.payload.note,
+                status: task.payload.status,
+                timestamp: task.payload.timestamp,
+                user_id: userSession.user.id
+              });
+            if (!error) success = true;
+            else console.error('[Sync Queue] Transaction upsert error:', error);
+          }
+        }
+
+        if (success) {
+          queue.shift(); // Remove completed task
+          localStorage.setItem('pos_sync_queue', JSON.stringify(queue));
+        } else {
+          console.warn('[Sync Queue] Task failed to write, pausing queue retry.');
+          break;
+        }
+      } catch (e) {
+        console.warn('[Sync Queue] Network drop during sync processing:', e);
+        break;
+      }
+    }
+
+    isProcessingQueue = false;
+    
+    const finalQueue = JSON.parse(localStorage.getItem('pos_sync_queue')) || [];
+    if (finalQueue.length === 0) {
+      updateSyncStatusUI('online');
+    } else {
+      updateSyncStatusUI('connecting');
+    }
+  }
   
 
 
@@ -408,6 +772,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     transactionHistory.unshift(tx);
     localStorage.setItem('pos_history', JSON.stringify(transactionHistory));
+    
+    // Add to Sync Queue
+    enqueueSyncTask('pos_history', 'upsert', tx);
   }
 
   // ==========================================================================
@@ -416,8 +783,6 @@ document.addEventListener('DOMContentLoaded', () => {
   function loadSettingsForms() {
     // Load profile
     merchantNameInput.value = merchantProfile.name;
-    
-
     
     // Clear forms & re-render lists
     resetBankForm();
@@ -520,7 +885,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     localStorage.setItem('pos_banks', JSON.stringify(bankAccounts));
     
-
+    // Add upsert job to Sync Queue
+    if (bankRecord) {
+      enqueueSyncTask('pos_banks', 'upsert', bankRecord);
+    }
 
     resetBankForm();
     renderSavedBanksList();
@@ -591,7 +959,10 @@ document.addEventListener('DOMContentLoaded', () => {
           bankAccounts = bankAccounts.filter(b => b.id !== id);
           localStorage.setItem('pos_banks', JSON.stringify(bankAccounts));
           
-
+          // Add delete job to Sync Queue
+          if (deletedBank) {
+            enqueueSyncTask('pos_banks', 'delete', deletedBank);
+          }
 
           renderSavedBanksList();
         }
@@ -759,7 +1130,12 @@ document.addEventListener('DOMContentLoaded', () => {
   clearHistoryBtn.addEventListener('click', () => {
     if (transactionHistory.length === 0) return;
     
-    if (confirm('Are you sure you want to clear ALL transaction history logs? This cannot be undone.')) {
+    if (confirm('Are you sure you want to clear ALL transaction history logs? This will delete them from the cloud database too!')) {
+      // Add delete jobs for all active transactions to sync queue
+      transactionHistory.forEach(tx => {
+        enqueueSyncTask('pos_history', 'delete', tx);
+      });
+
       transactionHistory = [];
       localStorage.setItem('pos_history', JSON.stringify(transactionHistory));
       renderSalesLogs();
@@ -767,8 +1143,103 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ==========================================================================
+  // CLOUD DATABASE SYNC & ACCOUNT LOGIN UI HANDLERS
+  // ==========================================================================
+  if (authLoginBtn) {
+    authLoginBtn.addEventListener('click', async () => {
+      const email = authEmailInput.value.trim();
+      const password = authPasswordInput.value.trim();
+
+      if (!email || !password) {
+        alert('Please fill out both Email and Password fields!');
+        return;
+      }
+      
+      // Re-init Supabase client
+      const initOk = initSupabase();
+      if (!initOk) {
+        alert('Failed to connect to Supabase. Make sure your database project is active.');
+        return;
+      }
+
+      try {
+        authLoginBtn.innerText = 'Signing In...';
+        authLoginBtn.disabled = true;
+
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        
+        if (error) {
+          alert('Authentication Failed: ' + error.message);
+        } else {
+          console.log('[Supabase Auth] Login successful:', data);
+          // Process sync queue immediately
+          processSyncQueue();
+        }
+      } catch(e) {
+        alert('Error signing in: ' + e.message);
+      } finally {
+        authLoginBtn.innerText = 'Sign In';
+        authLoginBtn.disabled = false;
+      }
+    });
+  }
+
+  if (authSignupBtn) {
+    authSignupBtn.addEventListener('click', async () => {
+      const email = authEmailInput.value.trim();
+      const password = authPasswordInput.value.trim();
+
+      if (!email || !password) {
+        alert('Please fill out both Email and Password fields!');
+        return;
+      }
+
+      const initOk = initSupabase();
+      if (!initOk) {
+        alert('Failed to connect to Supabase. Make sure your database project is active.');
+        return;
+      }
+
+      try {
+        authSignupBtn.innerText = 'Registering...';
+        authSignupBtn.disabled = true;
+
+        const { data, error } = await supabase.auth.signUp({ email, password });
+        
+        if (error) {
+          alert('Registration Failed: ' + error.message);
+        } else {
+          alert('Registration Successful! If email confirmation is enabled on your Supabase project, check your inbox. Otherwise, you can sign in directly now.');
+        }
+      } catch(e) {
+        alert('Error registering: ' + e.message);
+      } finally {
+        authSignupBtn.innerText = 'Register Account';
+        authSignupBtn.disabled = false;
+      }
+    });
+  }
+
+  if (authLogoutBtn) {
+    authLogoutBtn.addEventListener('click', async () => {
+      if (!supabase) return;
+      
+      if (confirm('Are you sure you want to sign out of Cloud Sync? Local backup will be preserved.')) {
+        try {
+          const { error } = await supabase.auth.signOut();
+          if (error) console.error('[Supabase Auth] Logout error:', error);
+        } catch (e) {
+          console.error('[Supabase Auth] Sign out failed:', e);
+        }
+      }
+    });
+  }
+
+  // ==========================================================================
   // INITIALIZE ON START
   // ==========================================================================
+  initSupabase(); // Load sync connections
+  window.addEventListener('online', processSyncQueue); // Queue worker hook
   updateAmountDisplay();
   switchScreen('#/pos'); // Load main POS interface
 });
