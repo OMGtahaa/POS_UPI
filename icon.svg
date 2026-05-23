@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <radialGradient id="bgGrad" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#020617" />
+    </radialGradient>
+    
+    <!-- Neon Glow Emerald -->
+    <linearGradient id="neonGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="50%" stop-color="#059669" />
+      <stop offset="100%" stop-color="#3b82f6" />
+    </linearGradient>
+
+    <!-- Glowing Accent -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="16" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)" />
+
+  <!-- Outer Glowing ring -->
+  <circle cx="256" cy="256" r="180" fill="none" stroke="url(#neonGlow)" stroke-width="8" opacity="0.3" filter="url(#glow)" />
+  <circle cx="256" cy="256" r="180" fill="none" stroke="url(#neonGlow)" stroke-width="4" />
+
+  <!-- Stylized POS Terminal Graphics -->
+  <g transform="translate(128, 128)" filter="url(#glow)">
+    <!-- Terminal Body -->
+    <rect x="56" y="20" width="144" height="216" rx="20" fill="#1e293b" stroke="url(#neonGlow)" stroke-width="4" />
+    
+    <!-- Terminal Screen -->
+    <rect x="72" y="36" width="112" height="72" rx="8" fill="#090d16" stroke="#334155" stroke-width="2" />
+    
+    <!-- QR Code Graphic on Terminal Screen -->
+    <g transform="translate(108, 52) scale(0.6)">
+      <!-- Outer square -->
+      <rect x="0" y="0" width="64" height="64" rx="4" fill="none" stroke="#10b981" stroke-width="6" />
+      <!-- Finder patterns -->
+      <rect x="8" y="8" width="16" height="16" fill="#10b981" />
+      <rect x="40" y="8" width="16" height="16" fill="#10b981" />
+      <rect x="8" y="40" width="16" height="16" fill="#10b981" />
+      <!-- Tiny squares -->
+      <rect x="40" y="40" width="8" height="8" fill="#10b981" />
+      <rect x="32" y="32" width="8" height="8" fill="#10b981" />
+      <rect x="24" y="24" width="8" height="8" fill="#10b981" />
+    </g>
+
+    <!-- Keypad area of terminal -->
+    <g transform="translate(76, 128)" fill="#334155">
+      <!-- Row 1 -->
+      <rect x="0" y="0" width="24" height="12" rx="3" fill="#10b981" />
+      <rect x="40" y="0" width="24" height="12" rx="3" />
+      <rect x="80" y="0" width="24" height="12" rx="3" />
+      
+      <!-- Row 2 -->
+      <rect x="0" y="24" width="24" height="12" rx="3" />
+      <rect x="40" y="24" width="24" height="12" rx="3" />
+      <rect x="80" y="24" width="24" height="12" rx="3" />
+
+      <!-- Row 3 -->
+      <rect x="0" y="48" width="24" height="12" rx="3" />
+      <rect x="40" y="48" width="24" height="12" rx="3" />
+      <rect x="80" y="48" width="24" height="12" rx="3" />
+      
+      <!-- Row 4 -->
+      <rect x="0" y="72" width="24" height="12" rx="3" fill="#ef4444" />
+      <rect x="40" y="72" width="24" height="12" rx="3" />
+      <rect x="80" y="72" width="24" height="12" rx="3" fill="#10b981" />
+    </g>
+  </g>
+</svg>

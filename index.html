@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <!-- PWA Responsive Viewport -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  
+  <title>POS UPI Pay Terminal</title>
+  
+  <!-- PWA Theme Color and Capability Meta -->
+  <meta name="theme-color" content="#0a0f1d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="UPI POS">
+  
+  <!-- Favicon / SVG Logo -->
+  <link rel="icon" type="image/svg+xml" href="./icon.svg">
+  <link rel="apple-touch-icon" href="./icon.svg">
+  
+  <!-- Web Manifest for PWA Setup -->
+  <link rel="manifest" href="./manifest.json">
+  
+  <!-- CSS Stylesheet -->
+  <link rel="stylesheet" href="./css/styles.css">
+  
+  <!-- Core Libraries & Scripts (Loaded at start) -->
+  <script defer src="./lib/qrious.min.js"></script>
+  <script defer src="./js/app.js"></script>
+</head>
+<body>
+
+  <div class="app-container">
+    
+    <!-- ==========================================================================
+         SCREEN 1: POS TERMINAL (#/pos)
+         ========================================================================== -->
+    <div id="view-pos" class="screen pos-screen active">
+      <!-- POS Top Bar -->
+      <div class="header">
+        <h1>POS Terminal</h1>
+        <!-- Only top right gear button for all settings/logs -->
+        <a href="#/settings" class="icon-btn" id="header-settings-btn" title="Settings & Logs">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </a>
+      </div>
+      
+      <!-- Interactive Calculator Amount display -->
+      <div class="amount-display-container">
+        <span class="amount-label">Enter Amount</span>
+        <div class="amount-val-wrapper">
+          <span class="currency-symbol">₹</span>
+          <span id="pos-amount-val" class="amount-val">0</span>
+        </div>
+      </div>
+      
+      <!-- Virtual Keypad (Direct Entry + Period button) -->
+      <div class="keypad-container" id="pos-keypad">
+        <div class="keypad-btn" data-val="1">1</div>
+        <div class="keypad-btn" data-val="2">2</div>
+        <div class="keypad-btn" data-val="3">3</div>
+        <div class="keypad-btn" data-val="4">4</div>
+        <div class="keypad-btn" data-val="5">5</div>
+        <div class="keypad-btn" data-val="6">6</div>
+        <div class="keypad-btn" data-val="7">7</div>
+        <div class="keypad-btn" data-val="8">8</div>
+        <div class="keypad-btn" data-val="9">9</div>
+        <!-- Period '.' button instead of 'C' -->
+        <div class="keypad-btn action-btn" data-val="decimal" id="keypad-decimal" title="Decimal Point">.</div>
+        <div class="keypad-btn" data-val="0">0</div>
+        <div class="keypad-btn action-btn" data-val="backspace" id="keypad-backspace" title="Backspace">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M12 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 12l6.414 6.414A2 2 0 0010.828 19H19a2 2 0 002-2V7a2 2 0 00-2-2h-8.172a2 2 0 00-1.414.586L3 12z" />
+          </svg>
+        </div>
+      </div>
+      
+      <!-- Main Action Button -->
+      <div class="pos-action-container">
+        <button class="btn btn-emerald" id="pos-proceed-btn">
+          <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+          </svg>
+          Proceed to Select Bank
+        </button>
+      </div>
+    </div>
+
+    <!-- ==========================================================================
+         SCREEN 2: BANK SELECTOR (#/select-bank)
+         ========================================================================== -->
+    <div id="view-select-bank" class="screen">
+      <div class="header">
+        <a href="#/pos" class="icon-btn" title="Back to Keypad">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+          </svg>
+        </a>
+        <h1>Select Bank</h1>
+        <div style="width: 40px;"></div> <!-- Spacer to center title -->
+      </div>
+
+      <div class="amount-summary-banner">
+        <span>Paying Amount</span>
+        <div class="amount-summary-val" id="select-bank-amount-val">₹0.00</div>
+      </div>
+
+      <div class="bank-list-scroll-wrapper">
+        <span class="settings-label">All Configured Options</span>
+        <div class="vertical-bank-list" id="select-bank-list-container">
+          <!-- Dynamic High Contrast Banks List populated by JS -->
+        </div>
+      </div>
+    </div>
+
+    <!-- ==========================================================================
+         SCREEN 3: UPI QR DISPLAY (#/qr)
+         ========================================================================== -->
+    <div id="view-qr" class="screen">
+      <div class="header">
+        <a href="#/select-bank" class="icon-btn" id="qr-back-btn" title="Back to Banks">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+          </svg>
+        </a>
+        <h1>UPI Payment QR</h1>
+        <div style="width: 40px;"></div>
+      </div>
+
+      <div class="qr-display-container-card card">
+        <!-- High Contrast QR Container -->
+        <div class="qr-container-outer">
+          <canvas id="qr-canvas" class="qr-canvas"></canvas>
+        </div>
+
+        <div class="modal-amt-wrapper">
+          <span class="modal-currency">₹</span>
+          <span id="qr-display-amt" class="modal-amt">0.00</span>
+        </div>
+
+        <div class="modal-payee-info">
+          <div id="qr-display-payee-bank" class="modal-payee-bank">Bank Name</div>
+          <div id="qr-display-payee-id" class="modal-payee-id">merchant@upi</div>
+        </div>
+
+        <div class="modal-status-bar">
+          <div class="modal-status-dot"></div>
+          <span>Customer can scan and pay now</span>
+        </div>
+
+        <!-- Confirm Trigger. Telegram links are completely removed -->
+        <button class="btn btn-emerald" id="qr-confirm-paid-btn" style="margin-top: 10px;">
+          Confirm Payment Received
+        </button>
+      </div>
+    </div>
+
+    <!-- ==========================================================================
+         SCREEN 4: SETTINGS & LOGS (#/settings)
+         ========================================================================== -->
+    <div id="view-settings" class="screen settings-screen">
+      <div class="header">
+        <a href="#/pos" class="icon-btn" title="Back to Keypad">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+          </svg>
+        </a>
+        <h1>POS System Hub</h1>
+        <div style="width: 40px;"></div>
+      </div>
+
+      <!-- CATEGORY 1: SALES LOG (VERY TOP OF THE LIST) -->
+      <div class="card settings-group">
+        <span class="settings-label">📊 Sales Log (Recent Transactions)</span>
+        
+        <!-- Sales Stats overview -->
+        <div class="stats-grid" style="margin-top: 10px;">
+          <div class="stat-card" style="background: rgba(255,255,255,0.01)">
+            <div class="stat-label">Total Sales</div>
+            <div id="stats-total-val" class="stat-value stat-value-emerald">₹ 0.00</div>
+          </div>
+          <div class="stat-card" style="background: rgba(255,255,255,0.01)">
+            <div class="stat-label">Transactions</div>
+            <div id="stats-count-val" class="stat-value">0</div>
+          </div>
+        </div>
+        
+        <!-- History Logs list scrollable -->
+        <div class="history-list-wrapper" style="margin-top: 14px; max-height: 250px; overflow-y: auto;">
+          <div id="history-list-container">
+            <!-- Dynamic logs rows -->
+          </div>
+        </div>
+        
+        <button class="btn btn-secondary" id="clear-history-btn" style="margin-top: 16px; border-color: rgba(239, 68, 68, 0.2); color: #fca5a5;">
+          Clear All History Logs
+        </button>
+      </div>
+
+      <!-- CATEGORY 2: BUSINESS PROFILE -->
+      <div class="card settings-group">
+        <span class="settings-label">🏢 Business Profile</span>
+        
+        <div class="form-group" style="margin-top: 12px;">
+          <label for="settings-merchant-name">Business / Payee Name</label>
+          <input type="text" id="settings-merchant-name" class="input-field" placeholder="Enter Business Name (e.g. Ram Stores)">
+        </div>
+        
+        <button class="btn btn-emerald" id="save-merchant-btn">Save Business Name</button>
+      </div>
+
+      <!-- CATEGORY 3: BANK ACCOUNT CONFIGURATION -->
+      <div class="card settings-group">
+        <span class="settings-label">🏦 Add / Edit Bank Accounts</span>
+        
+        <div class="form-group" style="margin-top: 12px;">
+          <label for="settings-bank-name">Bank Name</label>
+          <input type="text" id="settings-bank-name" class="input-field" placeholder="e.g. HDFC Bank, SBI">
+        </div>
+        
+        <div class="form-group">
+          <label for="settings-bank-upi">Payee UPI ID (VPA)</label>
+          <input type="text" id="settings-bank-upi" class="input-field" placeholder="e.g. RamStores@okaxis" style="text-transform: lowercase;">
+        </div>
+        
+        <div class="form-group">
+          <label for="settings-bank-holder">Payee Account Holder Name</label>
+          <input type="text" id="settings-bank-holder" class="input-field" placeholder="Registered bank name (optional)">
+        </div>
+        
+        <div class="form-group">
+          <label>Bank Card Theme Color</label>
+          <div class="color-selector">
+            <div class="color-option card-color-hdfc active" data-color="card-color-hdfc"></div>
+            <div class="color-option card-color-sbi" data-color="card-color-sbi"></div>
+            <div class="color-option card-color-icici" data-color="card-color-icici"></div>
+            <div class="color-option card-color-emerald" data-color="card-color-emerald"></div>
+            <div class="color-option card-color-violet" data-color="card-color-violet"></div>
+            <div class="color-option card-color-grey" data-color="card-color-grey"></div>
+          </div>
+        </div>
+        
+        <div style="display: flex; gap: 10px;">
+          <button class="btn" id="save-bank-btn" style="flex: 1;">Save Bank Details</button>
+          <button class="btn btn-secondary" id="cancel-bank-btn" style="display: none; padding: 14px 16px;">Cancel</button>
+        </div>
+      </div>
+
+      <!-- CATEGORY 4: CURRENTLY SAVED BANK ACCOUNTS LIST -->
+      <div class="card settings-group">
+        <span class="settings-label">📂 Saved Bank Accounts</span>
+        <div class="saved-banks-list" id="saved-banks-list-container" style="margin-top: 12px;">
+          <!-- Dynamic bank rows populated by JS -->
+        </div>
+      </div>
+
+      <!-- CATEGORY 5: ABOUT THE CREATOR -->
+      <div class="card settings-group">
+        <span class="settings-label">ℹ️ About the Creator</span>
+        <div style="margin-top: 12px; font-size: 13px; color: var(--text-secondary); line-height: 1.6; text-align: center;">
+          <div style="font-weight: 700; color: var(--text-primary); font-size: 15px; margin-bottom: 2px;">POS UPI Terminal</div>
+          <div style="color: var(--color-emerald); font-weight: 600; font-size: 11px; margin-bottom: 12px; letter-spacing: 0.5px;">Version 1.0.0 (Offline)</div>
+          <p style="margin-bottom: 4px;">This application was conceptualized and created by</p>
+          <div style="font-weight: 700; color: #ffffff; font-size: 18px; margin-top: 6px; margin-bottom: 8px; letter-spacing: 0.5px; background: linear-gradient(135deg, #3b82f6 0%, #10b981 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; display: inline-block;">Tahaa Sabir</div>
+          <p style="font-size: 11px; color: var(--text-muted);">Designed for secure, reliable, and instant merchant offline transactions.</p>
+        </div>
+      </div>
+    </div>
+    
+  </div>
+
+</body>
+</html>
