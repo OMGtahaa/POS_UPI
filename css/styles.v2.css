@@ -96,7 +96,7 @@ html {
   flex-direction: column;
   padding: clamp(12px, 3vh, 20px);
   animation: fadeIn 0.3s ease-out forwards;
-  height: 100%;
+  height: auto;
   overflow: hidden;
 }
 

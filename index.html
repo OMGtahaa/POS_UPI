@@ -322,6 +322,14 @@
         </div>
       </div>
 
+      <!-- CATEGORY 4: CURRENTLY SAVED BANK ACCOUNTS LIST -->
+      <div class="card settings-group">
+        <span class="settings-label">📂 Saved Bank Accounts</span>
+        <div class="saved-banks-list" id="saved-banks-list-container" style="margin-top: 12px;">
+          <!-- Dynamic bank rows populated by JS -->
+        </div>
+      </div>
+
       <!-- CATEGORY 3.5: CLOUD DATABASE SYNC & ACCOUNT LOGIN -->
       <div class="card settings-group">
         <span class="settings-label">🔒 Cloud Database Sync & Login</span>
@@ -360,20 +368,12 @@
         </div>
       </div>
 
-      <!-- CATEGORY 4: CURRENTLY SAVED BANK ACCOUNTS LIST -->
-      <div class="card settings-group">
-        <span class="settings-label">📂 Saved Bank Accounts</span>
-        <div class="saved-banks-list" id="saved-banks-list-container" style="margin-top: 12px;">
-          <!-- Dynamic bank rows populated by JS -->
-        </div>
-      </div>
-
       <!-- CATEGORY 5: ABOUT THE CREATOR -->
       <div class="card settings-group">
         <span class="settings-label">ℹ️ About the Creator</span>
         <div style="margin-top: 12px; font-size: 13px; color: var(--text-secondary); line-height: 1.6; text-align: center;">
           <div style="font-weight: 700; color: var(--text-primary); font-size: 15px; margin-bottom: 2px;">POS UPI Terminal</div>
-          <div style="color: var(--color-emerald); font-weight: 600; font-size: 11px; margin-bottom: 12px; letter-spacing: 0.5px;">Version 1.6.0 (Cloud Sync & Sharing Robustness)</div>
+          <div style="color: var(--color-emerald); font-weight: 600; font-size: 11px; margin-bottom: 12px; letter-spacing: 0.5px;">Version 1.7.0 (Thermal Receipt & Ergonomic Fast-Billing)</div>
           <p style="margin-bottom: 4px;">This application was conceptualized and created by</p>
           <div style="font-weight: 700; color: #ffffff; font-size: 18px; margin-top: 6px; margin-bottom: 8px; letter-spacing: 0.5px; background: linear-gradient(135deg, #3b82f6 0%, #10b981 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; display: inline-block;">Tahaa Sabir</div>
           <p style="font-size: 11px; color: var(--text-muted);">Designed for secure, reliable, and instant merchant offline transactions.</p>
@@ -419,7 +419,7 @@
           <div class="form-row-three">
             <input type="text" id="bill-item-name" class="input-field-compact" placeholder="Item Name" required>
             <input type="number" id="bill-item-price" class="input-field-compact" placeholder="Price (₹)" min="0.01" step="0.01" inputmode="decimal" required>
-            <input type="number" id="bill-item-qty" class="input-field-compact" placeholder="Qty" min="1" value="1" inputmode="numeric" required>
+            <input type="number" id="bill-item-qty" class="input-field-compact" placeholder="Qty" min="1" inputmode="numeric" required>
           </div>
           <button type="submit" id="bill-item-add-btn" class="btn btn-emerald btn-compact" style="margin-top: 10px; padding: 8px 12px; font-size: 13px; font-weight: 600; width: 100%;">
             + Add to Bill
@@ -462,7 +462,7 @@
         <div class="discount-container-row" style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
           <label style="font-size: 12px; color: var(--text-secondary); font-weight: 600;">Discount:</label>
           <div class="discount-input-group" style="display: flex; align-items: center; gap: 6px;">
-            <input type="number" id="bill-discount-input" class="input-field-compact" placeholder="0" min="0" style="width: 70px; text-align: right;" value="0">
+            <input type="number" id="bill-discount-input" class="input-field-compact" placeholder="0" min="0" style="width: 70px; text-align: right;">
             <select id="bill-discount-type" class="filter-select" style="padding: 6px; width: 50px; font-size: 12px; border-radius: 8px; height: 32px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); color: #fff;">
               <option value="percent">%</option>
               <option value="fixed">₹</option>
