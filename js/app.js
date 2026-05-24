@@ -168,8 +168,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // POS Header Sync Elements
   const headerSyncIndicator = document.getElementById('header-sync-indicator');
   const syncIndicatorText = document.getElementById('sync-indicator-text');
-  
-
+  const headerRefreshBtn = document.getElementById('header-refresh-btn');
+  const loadingBar = document.getElementById('loading-bar');
   
   // Bank Selector View Elements
   const selectBankAmountVal = document.getElementById('select-bank-amount-val');
@@ -216,7 +216,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const statsTotalVal = document.getElementById('stats-total-val');
   const statsCountVal = document.getElementById('stats-count-val');
   const historyListContainer = document.getElementById('history-list-container');
-  const clearHistoryBtn = document.getElementById('clear-history-btn');
+  const deleteFilteredBtn = document.getElementById('delete-filtered-btn');
+  const clearAllHistoryBtn = document.getElementById('clear-all-history-btn');
   
   let currentQr = null; // QRious QR code instance
 
@@ -400,6 +401,9 @@ document.addEventListener('DOMContentLoaded', () => {
   async function pullCloudDatabase() {
     if (!supabase || !userSession) return;
     
+    // Show loading bar during cloud pull
+    if (loadingBar) loadingBar.classList.add('active');
+    
     try {
       // 1. Pull Banks
       const { data: cloudBanks, error: banksError } = await withTimeout(supabase
@@ -449,6 +453,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (e) {
       console.error('[Supabase Pull] Sync failed:', e);
+    } finally {
+      // Hide loading bar after pull completes
+      if (loadingBar) loadingBar.classList.remove('active');
     }
   }
 
@@ -606,6 +613,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     isProcessingQueue = true;
     updateSyncStatusUI('syncing');
+    if (loadingBar) loadingBar.classList.add('active');
 
     console.log(`[Sync Queue] Processing ${queue.length} pending task(s)...`);
 
@@ -677,6 +685,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } finally {
       isProcessingQueue = false;
+      if (loadingBar) loadingBar.classList.remove('active');
       
       const finalQueue = JSON.parse(localStorage.getItem('pos_sync_queue')) || [];
       if (finalQueue.length === 0) {
@@ -1274,13 +1283,37 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="history-item-bank">${tx.bankName}</div>
           <div class="history-item-time">${formattedTime}</div>
         </div>
-        <div class="history-item-right">
-          <div class="history-item-amt">${formattedAmt}</div>
-          <span class="status-badge status-badge-paid">${tx.status}</span>
+        <div class="history-item-right" style="display: flex; align-items: center;">
+          <div>
+            <div class="history-item-amt">${formattedAmt}</div>
+            <span class="status-badge status-badge-paid">${tx.status}</span>
+          </div>
+          <button class="history-item-delete" data-tx-id="${tx.id}" title="Delete this transaction">
+            <svg viewBox="0 0 24 24" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
         </div>
       `;
 
       historyListContainer.appendChild(item);
+    });
+
+    // Bind individual delete buttons
+    historyListContainer.querySelectorAll('.history-item-delete').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const txId = btn.getAttribute('data-tx-id');
+        const txToDelete = transactionHistory.find(t => t.id === txId);
+        if (!txToDelete) return;
+        
+        if (confirm(`Delete this ${new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(txToDelete.amount)} transaction?`)) {
+          enqueueSyncTask('pos_history', 'delete', txToDelete);
+          transactionHistory = transactionHistory.filter(t => t.id !== txId);
+          localStorage.setItem('pos_history', JSON.stringify(transactionHistory));
+          renderSalesLogs();
+        }
+      });
     });
   }
 
@@ -1288,21 +1321,67 @@ document.addEventListener('DOMContentLoaded', () => {
   filterFy.addEventListener('change', renderSalesLogs);
   filterMonth.addEventListener('change', renderSalesLogs);
 
-  // Clear logs histories
-  clearHistoryBtn.addEventListener('click', () => {
-    if (transactionHistory.length === 0) return;
-    
-    if (confirm('Are you sure you want to clear ALL transaction history logs? This will delete them from the cloud database too!')) {
-      // Add delete jobs for all active transactions to sync queue
+  // Delete only the currently filtered/shown transactions
+  if (deleteFilteredBtn) {
+    deleteFilteredBtn.addEventListener('click', () => {
+      const selectedFy = filterFy.value;
+      const selectedMonth = filterMonth.value;
+      
+      // Re-apply the same filter logic to get visible transactions
+      let startYear, endYear;
+      if (selectedFy === 'FY2526') { startYear = 2025; endYear = 2026; }
+      else if (selectedFy === 'FY2627') { startYear = 2026; endYear = 2027; }
+      
+      const filteredIds = new Set();
       transactionHistory.forEach(tx => {
-        enqueueSyncTask('pos_history', 'delete', tx);
+        const txDate = new Date(tx.timestamp);
+        const txMonthStr = String(txDate.getMonth() + 1).padStart(2, '0');
+        
+        if (selectedFy !== 'all') {
+          const txTime = txDate.getTime();
+          const fyStart = new Date(startYear, 3, 1, 0, 0, 0, 0).getTime();
+          const fyEnd = new Date(endYear, 2, 31, 23, 59, 59, 999).getTime();
+          if (txTime < fyStart || txTime > fyEnd) return;
+        }
+        if (selectedMonth !== 'all' && txMonthStr !== selectedMonth) return;
+        
+        filteredIds.add(tx.id);
       });
+      
+      if (filteredIds.size === 0) return;
+      
+      const label = (selectedFy !== 'all' || selectedMonth !== 'all') 
+        ? `Delete ${filteredIds.size} shown transaction(s) matching current filters?` 
+        : `Delete all ${filteredIds.size} transaction(s)?`;
+      
+      if (confirm(label)) {
+        transactionHistory.forEach(tx => {
+          if (filteredIds.has(tx.id)) {
+            enqueueSyncTask('pos_history', 'delete', tx);
+          }
+        });
+        transactionHistory = transactionHistory.filter(tx => !filteredIds.has(tx.id));
+        localStorage.setItem('pos_history', JSON.stringify(transactionHistory));
+        renderSalesLogs();
+      }
+    });
+  }
 
-      transactionHistory = [];
-      localStorage.setItem('pos_history', JSON.stringify(transactionHistory));
-      renderSalesLogs();
-    }
-  });
+  // Clear ALL history logs (nuclear option)
+  if (clearAllHistoryBtn) {
+    clearAllHistoryBtn.addEventListener('click', () => {
+      if (transactionHistory.length === 0) return;
+      
+      if (confirm('Are you sure you want to clear ALL transaction history logs? This will delete them from the cloud database too!')) {
+        transactionHistory.forEach(tx => {
+          enqueueSyncTask('pos_history', 'delete', tx);
+        });
+        transactionHistory = [];
+        localStorage.setItem('pos_history', JSON.stringify(transactionHistory));
+        renderSalesLogs();
+      }
+    });
+  }
 
   // ==========================================================================
   // CLOUD DATABASE SYNC & ACCOUNT LOGIN UI HANDLERS
@@ -1415,6 +1494,17 @@ document.addEventListener('DOMContentLoaded', () => {
     initSupabase();
   } catch (e) {
     console.error('[POS Initialization] Supabase startup failed:', e);
+  }
+
+  // Refresh button — hard cache-busting reload
+  if (headerRefreshBtn) {
+    headerRefreshBtn.addEventListener('click', () => {
+      if (loadingBar) loadingBar.classList.add('active');
+      // Small delay for visual feedback before reload
+      setTimeout(() => {
+        window.location.reload(true);
+      }, 200);
+    });
   }
 
   window.addEventListener('online', processSyncQueue); // Queue worker hook

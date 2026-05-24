@@ -1,4 +1,4 @@
-const CACHE_NAME = 'upi-pos-v12';
+const CACHE_NAME = 'upi-pos-v13';
 const ASSETS = [
   './',
   './index.html',

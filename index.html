@@ -31,6 +31,8 @@
 <body>
 
   <div class="app-container">
+    <!-- Top loading bar for sync/reload feedback -->
+    <div id="loading-bar" class="loading-bar"></div>
     
     <!-- ==========================================================================
          SCREEN 1: POS TERMINAL (#/pos)
@@ -44,13 +46,22 @@
             <span id="sync-indicator-text">Local Only</span>
           </a>
         </div>
-        <!-- Only top right gear button for all settings/logs -->
-        <a href="#/settings" class="icon-btn" id="header-settings-btn" title="Settings & Logs">
-          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-        </a>
+        <div class="header-actions">
+          <!-- Refresh button for cache-busting hard reload -->
+          <button class="icon-btn" id="header-refresh-btn" title="Refresh & Sync">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h5M20 20v-5h-5" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.49 9A9 9 0 005.64 5.64L4 4m16 16l-1.64-1.64A9 9 0 014.51 15" />
+            </svg>
+          </button>
+          <!-- Settings gear button -->
+          <a href="#/settings" class="icon-btn" id="header-settings-btn" title="Settings & Logs">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </a>
+        </div>
       </div>
       
       <!-- Interactive Calculator Amount display -->
@@ -230,9 +241,14 @@
           </div>
         </div>
         
-        <button class="btn btn-secondary" id="clear-history-btn" style="margin-top: 16px; border-color: rgba(239, 68, 68, 0.2); color: #fca5a5; padding: 10px 14px; font-size: 13px;">
-          Clear All History Logs
-        </button>
+        <div class="history-delete-actions">
+          <button class="btn btn-secondary" id="delete-filtered-btn" style="border-color: rgba(251, 191, 36, 0.2); color: #fbbf24;">
+            🗑 Delete Shown
+          </button>
+          <button class="btn btn-secondary" id="clear-all-history-btn" style="border-color: rgba(239, 68, 68, 0.2); color: #fca5a5;">
+            ⚠ Clear All History
+          </button>
+        </div>
       </div>
 
       <!-- CATEGORY 2: BUSINESS PROFILE -->
@@ -335,7 +351,7 @@
         <span class="settings-label">ℹ️ About the Creator</span>
         <div style="margin-top: 12px; font-size: 13px; color: var(--text-secondary); line-height: 1.6; text-align: center;">
           <div style="font-weight: 700; color: var(--text-primary); font-size: 15px; margin-bottom: 2px;">POS UPI Terminal</div>
-          <div style="color: var(--color-emerald); font-weight: 600; font-size: 11px; margin-bottom: 12px; letter-spacing: 0.5px;">Version 1.2.0 (Stable Sync & Privacy)</div>
+          <div style="color: var(--color-emerald); font-weight: 600; font-size: 11px; margin-bottom: 12px; letter-spacing: 0.5px;">Version 1.3.0 (Smart Sync & Bill Tools)</div>
           <p style="margin-bottom: 4px;">This application was conceptualized and created by</p>
           <div style="font-weight: 700; color: #ffffff; font-size: 18px; margin-top: 6px; margin-bottom: 8px; letter-spacing: 0.5px; background: linear-gradient(135deg, #3b82f6 0%, #10b981 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; display: inline-block;">Tahaa Sabir</div>
           <p style="font-size: 11px; color: var(--text-muted);">Designed for secure, reliable, and instant merchant offline transactions.</p>
