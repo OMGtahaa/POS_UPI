@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Service Worker Registration ---
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=17')
+      navigator.serviceWorker.register('./sw.js?v=18')
         .then((reg) => {
           console.log('[Service Worker] Registered successfully:', reg.scope);
           
@@ -250,6 +250,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Reporting Dashboard Elements
   const filterFy = document.getElementById('filter-fy');
   const filterMonth = document.getElementById('filter-month');
+  const filterSearchName = document.getElementById('filter-search-name');
   const statsDailyVal = document.getElementById('stats-daily-val');
   const statsMonthlyVal = document.getElementById('stats-monthly-val');
   const statsMonthlyLabel = document.getElementById('stats-monthly-label');
@@ -1095,8 +1096,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const currentInvoiceNum = localStorage.getItem('pos_invoice_counter') || '1';
         const custName = (billCustNameInput && billCustNameInput.value.trim()) || '-';
         const custPhone = (billCustPhoneInput && billCustPhoneInput.value.trim()) || '-';
-        const itemsSummary = activeBillItems.map(item => `${item.name} x${item.qty}`).join(', ');
-        transactionNote = `[Bill #${currentInvoiceNum}] Cust: ${custName} | Ph: ${custPhone} | Items: ${itemsSummary}`;
+        const discInputVal = parseFloat(billDiscountInput.value) || 0;
+        const totals = calculateBillTotals();
+        
+        const billData = {
+          type: 'bill',
+          invoiceNum: currentInvoiceNum,
+          custName: custName,
+          custPhone: custPhone,
+          items: [...activeBillItems], // Clone active items array
+          discount: discInputVal,
+          discountType: billDiscountType.value,
+          grandTotal: totals.grandTotal,
+          subtotal: totals.subtotal,
+          savings: totals.savings,
+          itemCount: totals.itemCount
+        };
+        transactionNote = JSON.stringify(billData);
         
         // Increment global invoice counter in localStorage sequentially!
         const nextInvoiceNum = parseInt(currentInvoiceNum) + 1;
@@ -1115,7 +1131,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       currentAmountStr = '0';
       activeSelectedBank = null;
-      window.location.hash = '#/settings'; // Go to sales log inside settings
+      window.location.hash = '#/pos'; // Go to main POS home keypad view
     };
   }
 
@@ -1332,20 +1348,20 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   
     // Format WhatsApp invoice string
-  function generateWhatsAppInvoiceText(bank) {
-    if (!bank) return '';
+  function generateWhatsAppInvoiceText(bank, billData) {
+    if (!bank || !billData) return '';
     
-    const totals = calculateBillTotals();
-    const custName = (billCustNameInput && billCustNameInput.value.trim()) || '-';
+    const custName = billData.custName || '-';
     const shopName = merchantProfile.name || 'Shop Name';
-    const currentInvoiceNum = localStorage.getItem('pos_invoice_counter') || '1';
+    const invoiceNum = billData.invoiceNum || '1';
+    const grandTotal = billData.grandTotal || 0;
     
     // UPI Deep Link Generation
-    const upiLink = `upi://pay?pa=${encodeURIComponent(bank.upiId)}&pn=${encodeURIComponent(shopName)}&am=${totals.grandTotal.toFixed(2)}&cu=INR`;
+    const upiLink = `upi://pay?pa=${encodeURIComponent(bank.upiId)}&pn=${encodeURIComponent(shopName)}&am=${grandTotal.toFixed(2)}&cu=INR`;
     
     let msg = `Hi ${custName !== '-' ? custName : 'Customer'},\n\n`;
     msg += `Thank you for visiting *${shopName}*!\n`;
-    msg += `Your invoice *#${currentInvoiceNum}* of *₹${totals.grandTotal.toFixed(2)}* has been successfully generated.\n\n`;
+    msg += `Your invoice *#${invoiceNum}* of *₹${grandTotal.toFixed(2)}* has been successfully generated.\n\n`;
     msg += `💳 *Tap to Pay via UPI link:*\n${upiLink}\n\n`;
     msg += `*(Please check the attached receipt image for full details)*`;
     
@@ -1353,15 +1369,15 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Draw invoice on an offline canvas and share it as an image with text fallback
-  function shareReceiptAsImage(bank) {
-    if (activeBillItems.length === 0) return;
+  function shareReceiptAsImage(bank, billData) {
+    if (!bank || !billData) return;
     
-    const totals = calculateBillTotals();
-    const custName = (billCustNameInput && billCustNameInput.value.trim()) || '-';
-    const custPhone = (billCustPhoneInput && billCustPhoneInput.value.trim()) || '-';
+    const custName = billData.custName || '-';
+    const custPhone = billData.custPhone || '-';
     const shopName = merchantProfile.name || 'Shop Name';
     const shopAddress = merchantProfile.address || 'Shop Address';
     const shopPhone = merchantProfile.phone || '0000000000';
+    const invoiceNum = billData.invoiceNum || '1';
     
     // Create an offline canvas and render details with 2x High-DPI resolution scaling
     const canvas = document.createElement('canvas');
@@ -1372,7 +1388,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const headerHeight = 175;
     const itemHeight = 35;
     const footerHeight = 310;
-    const baseHeight = headerHeight + (activeBillItems.length * itemHeight) + footerHeight;
+    const items = billData.items || [];
+    const baseHeight = headerHeight + (items.length * itemHeight) + footerHeight;
     
     canvas.width = baseWidth * scale;
     canvas.height = baseHeight * scale;
@@ -1418,9 +1435,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
     const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
     
-    const currentInvoiceNum = localStorage.getItem('pos_invoice_counter') || '1';
-    
-    ctx.fillText(`Invoice #: ${currentInvoiceNum}`, 25, 100);
+    ctx.fillText(`Invoice #: ${invoiceNum}`, 25, 100);
     ctx.fillText(`Date: ${dateStr}, ${timeStr}`, 25, 115);
     ctx.fillText(`Customer: ${custName}`, 25, 130);
     ctx.fillText(`Phone: ${custPhone}`, 25, 145);
@@ -1448,7 +1463,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentY = 202;
     ctx.font = '12px "Inter", sans-serif';
     
-    activeBillItems.forEach(item => {
+    items.forEach(item => {
       ctx.textAlign = 'left';
       ctx.fillStyle = '#000000';
       ctx.fillText(item.name, 25, currentY);
@@ -1474,19 +1489,18 @@ document.addEventListener('DOMContentLoaded', () => {
     ctx.textAlign = 'left';
     ctx.fillStyle = '#000000';
     ctx.font = '11px "Inter", sans-serif';
-    ctx.fillText(`Subtotal (${totals.itemCount} items):`, 25, currentY + 10);
+    ctx.fillText(`Subtotal (${billData.itemCount} items):`, 25, currentY + 10);
     ctx.textAlign = 'right';
-    ctx.fillText(`₹${totals.subtotal.toFixed(2)}`, baseWidth - 25, currentY + 10);
+    ctx.fillText(`₹${billData.subtotal.toFixed(2)}`, baseWidth - 25, currentY + 10);
     
     currentY += 28;
     
-    if (totals.savings > 0) {
-      const discInputVal = parseFloat(billDiscountInput.value) || 0;
-      const discSymbol = billDiscountType.value === 'percent' ? `${discInputVal}%` : `₹${discInputVal}`;
+    if (billData.savings > 0) {
+      const discSymbol = billData.discountType === 'percent' ? `${billData.discount}%` : `₹${billData.discount}`;
       ctx.textAlign = 'left';
       ctx.fillText(`Discount (${discSymbol}):`, 25, currentY);
       ctx.textAlign = 'right';
-      ctx.fillText(`-₹${totals.savings.toFixed(2)}`, baseWidth - 25, currentY);
+      ctx.fillText(`-₹${billData.savings.toFixed(2)}`, baseWidth - 25, currentY);
       currentY += 20;
     }
     
@@ -1502,12 +1516,12 @@ document.addEventListener('DOMContentLoaded', () => {
     ctx.fillText('GRAND TOTAL:', 25, currentY + 14);
     ctx.textAlign = 'right';
     ctx.font = 'bold 15px "Inter", sans-serif';
-    ctx.fillText(`₹${totals.grandTotal.toFixed(2)}`, baseWidth - 25, currentY + 14);
+    ctx.fillText(`₹${billData.grandTotal.toFixed(2)}`, baseWidth - 25, currentY + 14);
     
     currentY += 38;
     
     // Draw UPI Pay QR Code right on the receipt image!
-    const upiLink = `upi://pay?pa=${bank.upiId}&pn=${encodeURIComponent(shopName)}&am=${totals.grandTotal.toFixed(2)}&cu=INR`;
+    const upiLink = `upi://pay?pa=${bank.upiId}&pn=${encodeURIComponent(shopName)}&am=${billData.grandTotal.toFixed(2)}&cu=INR`;
     const tempCanvas = document.createElement('canvas');
     const tempQr = new QRious({
       element: tempCanvas,
@@ -1542,8 +1556,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!blob) return;
       
       const file = new File([blob], `invoice_${custName !== '-' ? custName : 'customer'}.png`, { type: 'image/png' });
-      const text = generateWhatsAppInvoiceText(bank);
-      const custPhone = billCustPhoneInput.value.trim().replace(/\D/g, '');
+      const text = generateWhatsAppInvoiceText(bank, billData);
+      const cleanPhone = custPhone.replace(/\D/g, '');
       
       // Robust capability detection for Web Share API
       let isShareSupported = false;
@@ -1562,11 +1576,11 @@ document.addEventListener('DOMContentLoaded', () => {
         .then(() => console.log('[Web Share] Shared receipt image successfully'))
         .catch((err) => {
           console.warn('[Web Share] Image sharing failed or rejected, falling back to WhatsApp text link:', err);
-          openWhatsAppTextFallback(custPhone, text);
+          openWhatsAppTextFallback(cleanPhone, text);
         });
       } else {
         // Robust text-only fallback (Desktop Chrome, non-HTTPS local tests)
-        openWhatsAppTextFallback(custPhone, text);
+        openWhatsAppTextFallback(cleanPhone, text);
       }
     }, 'image/png');
   }
@@ -1786,6 +1800,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const selectedFy = filterFy.value; // "all", "FY2526", "FY2627"
     const selectedMonth = filterMonth.value; // "all", "04", "05", etc.
+    const searchQuery = (filterSearchName && filterSearchName.value.trim().toLowerCase()) || '';
     
     // --- Parse Date Bounds for Financial Years ---
     // Indian FY spans April 1st to March 31st of the next calendar year
@@ -1798,7 +1813,7 @@ document.addEventListener('DOMContentLoaded', () => {
       endYear = 2027;
     }
 
-    // Filter transaction list based on select dropdowns
+    // Filter transaction list based on select dropdowns, dates, and search queries
     let filteredHistory = activeHistory.filter(tx => {
       const txDate = new Date(tx.timestamp);
       const txYear = txDate.getFullYear();
@@ -1818,6 +1833,36 @@ document.addEventListener('DOMContentLoaded', () => {
       // 2. Filter by Month
       if (selectedMonth !== 'all') {
         if (txMonthStr !== selectedMonth) {
+          return false;
+        }
+      }
+
+      // 3. Filter by Search Query (Customer Name, Phone, Bank, Invoice # or Note)
+      if (searchQuery) {
+        let matches = false;
+        let noteText = tx.note || '';
+        try {
+          if (noteText.startsWith('{') || noteText.startsWith('[')) {
+            const billData = JSON.parse(noteText);
+            if (billData) {
+              const custName = (billData.custName || '').toLowerCase();
+              const custPhone = (billData.custPhone || '').toLowerCase();
+              const invNum = String(billData.invoiceNum || '').toLowerCase();
+              if (custName.includes(searchQuery) || custPhone.includes(searchQuery) || invNum.includes(searchQuery)) {
+                matches = true;
+              }
+            }
+          }
+        } catch (e) {}
+        
+        if (!matches && noteText.toLowerCase().includes(searchQuery)) {
+          matches = true;
+        }
+        if (!matches && tx.bankName.toLowerCase().includes(searchQuery)) {
+          matches = true;
+        }
+        
+        if (!matches) {
           return false;
         }
       }
@@ -1898,9 +1943,16 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    // Sort filteredHistory by timestamp descending to ensure perfect "sort by date" sequence
+    filteredHistory.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
     filteredHistory.forEach(tx => {
       const item = document.createElement('div');
       item.className = 'history-item';
+      item.style.flexDirection = 'column';
+      item.style.alignItems = 'stretch';
+      item.style.padding = '12px';
+      item.style.cursor = 'pointer';
       
       const formattedAmt = new Intl.NumberFormat('en-IN', {
         style: 'currency',
@@ -1911,23 +1963,118 @@ document.addEventListener('DOMContentLoaded', () => {
       const txDate = new Date(tx.timestamp);
       const formattedTime = txDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' | ' + txDate.toLocaleDateString([], { month: 'short', day: 'numeric' });
 
-      item.innerHTML = `
-        <div class="history-item-left">
-          <div class="history-item-bank">${tx.bankName}</div>
-          <div class="history-item-time">${formattedTime}</div>
-        </div>
-        <div class="history-item-right" style="display: flex; align-items: center;">
-          <div>
-            <div class="history-item-amt">${formattedAmt}</div>
-            <span class="status-badge status-badge-paid">${tx.status}</span>
+      // Determine note content and parse JSON bill details if applicable
+      let isBill = false;
+      let billData = null;
+      let displayNote = tx.note || '';
+      
+      try {
+        if (tx.note && (tx.note.startsWith('{') || tx.note.startsWith('['))) {
+          billData = JSON.parse(tx.note);
+          if (billData && billData.invoiceNum !== undefined) {
+            isBill = true;
+          }
+        }
+      } catch (e) {}
+
+      let detailsHtml = '';
+      let badgeLabel = tx.status;
+      let badgeClass = 'status-badge-paid';
+      
+      if (isBill) {
+        badgeLabel = `Bill #${billData.invoiceNum}`;
+        badgeClass = 'status-badge-paid';
+        
+        const itemsListHtml = billData.items.map(item => `
+          <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 2px; color: var(--text-secondary);">
+            <span>• ${item.name} (x${item.qty})</span>
+            <span>₹${(item.price * item.qty).toFixed(2)}</span>
           </div>
-          <button class="history-item-delete" data-tx-id="${tx.id}" title="Delete this transaction">
-            <svg viewBox="0 0 24 24" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-          </button>
+        `).join('');
+        
+        detailsHtml = `
+          <div class="history-item-details" style="display: none; margin-top: 10px; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 10px; user-select: text;">
+            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; line-height: 1.4;">
+              <strong>Bill Details (Invoice #${billData.invoiceNum})</strong><br>
+              Customer: <span style="color:#fff;">${billData.custName}</span> | Phone: <span style="color:#fff;">${billData.custPhone}</span>
+            </div>
+            <div style="margin-bottom: 8px;">
+              ${itemsListHtml}
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: bold; margin-bottom: 10px; color: #fff;">
+              <span>Total Paid:</span>
+              <span style="color: var(--color-emerald)">₹${billData.grandTotal.toFixed(2)}</span>
+            </div>
+            <button class="btn btn-emerald resend-whatsapp-btn" style="padding: 8px 12px; font-size: 11px; width: 100%; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px;">
+              <svg fill="currentColor" viewBox="0 0 24 24" style="width: 14px; height: 14px;">
+                <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.513 2.262 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.66.986 3.292 1.48 4.957 1.48 5.397 0 9.783-4.382 9.786-9.778.001-2.614-1.015-5.07-2.861-6.918C16.68 2.087 14.225.996 11.61.996 6.21.996 1.825 5.378 1.822 10.774c-.001 1.761.472 3.42 1.368 4.949L2.2 21.066l4.447-1.912zm13.111-8.528c-.302-.152-1.791-.883-2.068-.984-.278-.102-.48-.152-.68.152-.2.304-.775.984-.95 1.186-.176.203-.351.228-.654.076-.303-.152-1.28-.471-2.438-1.503-.9-.802-1.507-1.793-1.684-2.097-.176-.304-.019-.469.132-.619.136-.134.303-.354.454-.531.152-.177.202-.304.303-.506.101-.203.05-.38-.025-.531-.076-.152-.68-1.636-.931-2.24-.246-.59-.496-.51-.68-.52-.177-.008-.38-.01-.58-.01s-.525.075-.8.38c-.275.304-1.05 1.028-1.05 2.508 0 1.48 1.075 2.913 1.225 3.116.15.203 2.115 3.23 5.125 4.53.716.31 1.275.495 1.71.635.72.23 1.375.197 1.892.12.576-.086 1.79-.73 2.043-1.436.253-.706.253-1.313.177-1.438-.076-.126-.278-.203-.58-.354z"/>
+              </svg>
+              Resend Bill to WhatsApp
+            </button>
+          </div>
+        `;
+      } else {
+        detailsHtml = `
+          <div class="history-item-details" style="display: none; margin-top: 10px; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 10px; font-size: 11px; color: var(--text-muted);">
+            <strong>Transaction Note:</strong> ${displayNote}
+          </div>
+        `;
+      }
+
+      item.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+          <div class="history-item-left">
+            <div class="history-item-bank">${tx.bankName}</div>
+            <div class="history-item-time">${formattedTime}</div>
+          </div>
+          <div class="history-item-right" style="display: flex; align-items: center; gap: 8px;">
+            <div style="text-align: right;">
+              <div class="history-item-amt">${formattedAmt}</div>
+              <span class="status-badge ${badgeClass}">${badgeLabel}</span>
+            </div>
+            <button class="history-item-delete" data-tx-id="${tx.id}" title="Delete this transaction" style="padding: 6px; margin-left: 4px;">
+              <svg viewBox="0 0 24 24" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          </div>
         </div>
+        ${detailsHtml}
       `;
+
+      // Collapsible toggle handler
+      item.addEventListener('click', (e) => {
+        // Prevent toggle if delete or resend buttons are clicked
+        if (e.target.closest('.history-item-delete') || e.target.closest('.resend-whatsapp-btn')) {
+          return;
+        }
+        const detailsPanel = item.querySelector('.history-item-details');
+        if (detailsPanel) {
+          const isCollapsed = detailsPanel.style.display === 'none';
+          detailsPanel.style.display = isCollapsed ? 'block' : 'none';
+          item.style.background = isCollapsed ? 'rgba(255,255,255,0.03)' : '';
+        }
+      });
+
+      // Bind WhatsApp Resend action
+      if (isBill) {
+        const resendBtn = item.querySelector('.resend-whatsapp-btn');
+        if (resendBtn) {
+          resendBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            
+            // Generate receipt directly using parsed billData to completely prevent async race conditions
+            const txBank = bankAccounts.find(b => b.name === tx.bankName || b.upiId === tx.upiId) || bankAccounts[0];
+            if (!txBank) {
+              alert('Please configure at least one bank account in Settings to generate the UPI link.');
+              return;
+            }
+            
+            console.log('[Resend WhatsApp] Regenerating receipt for Invoice #', billData.invoiceNum);
+            shareReceiptAsImage(txBank, billData);
+          });
+        }
+      }
 
       historyListContainer.appendChild(item);
     });
@@ -2100,8 +2247,35 @@ document.addEventListener('DOMContentLoaded', () => {
       
       if (confirm('Are you sure you want to sign out? Your local device data cache will be cleared for privacy.')) {
         try {
-          const { error } = await supabase.auth.signOut();
-          if (error) console.error('[Supabase Auth] Logout error:', error);
+          // Immediately clear everything locally to prevent privacy leak on iOS PWA
+          localStorage.removeItem('pos_initial_sync_done');
+          localStorage.removeItem('pos_sync_queue');
+          
+          localStorage.setItem('pos_banks', JSON.stringify(DEFAULT_BANKS));
+          localStorage.setItem('pos_history', JSON.stringify([]));
+          localStorage.setItem('pos_merchant', JSON.stringify(DEFAULT_MERCHANT));
+          localStorage.setItem('pos_invoice_counter', '1');
+          
+          bankAccounts = DEFAULT_BANKS;
+          transactionHistory = [];
+          merchantProfile = DEFAULT_MERCHANT;
+          
+          if (authEmailInput) authEmailInput.value = '';
+          if (authPasswordInput) authPasswordInput.value = '';
+          if (merchantNameInput) merchantNameInput.value = '';
+          if (merchantAddressInput) merchantAddressInput.value = '';
+          if (merchantPhoneInput) merchantPhoneInput.value = '';
+          if (loggedInEmailDisplay) loggedInEmailDisplay.value = '';
+          
+          renderSavedBanksList();
+          renderSalesLogs();
+          resetBankForm();
+          
+          updateSyncStatusUI('offline');
+          unsubscribeRealtimeSync();
+
+          // Trigger signOut in background
+          await supabase.auth.signOut();
         } catch (e) {
           console.error('[Supabase Auth] Sign out failed:', e);
         }
@@ -2258,11 +2432,26 @@ document.addEventListener('DOMContentLoaded', () => {
       const currentInvoiceNum = localStorage.getItem('pos_invoice_counter') || '1';
       const custName = (billCustNameInput && billCustNameInput.value.trim()) || '-';
       const custPhone = (billCustPhoneInput && billCustPhoneInput.value.trim()) || '-';
-      const itemsSummary = activeBillItems.map(item => `${item.name} x${item.qty}`).join(', ');
-      const transactionNote = `[Bill #${currentInvoiceNum}] Cust: ${custName} | Ph: ${custPhone} | Items: ${itemsSummary}`;
+      const discInputVal = parseFloat(billDiscountInput.value) || 0;
       
-      // 1. Share crisp receipt image dynamically or fallback to WhatsApp text
-      shareReceiptAsImage(bank);
+      const billData = {
+        type: 'bill',
+        invoiceNum: currentInvoiceNum,
+        custName: custName,
+        custPhone: custPhone,
+        items: [...activeBillItems], // Clone active items array
+        discount: discInputVal,
+        discountType: billDiscountType.value,
+        grandTotal: totals.grandTotal,
+        subtotal: totals.subtotal,
+        savings: totals.savings,
+        itemCount: totals.itemCount
+      };
+      
+      const transactionNote = JSON.stringify(billData);
+      
+      // 1. Share crisp receipt image dynamically
+      shareReceiptAsImage(bank, billData);
       
       // 2. Increment global invoice counter in localStorage sequentially!
       const nextInvoiceNum = parseInt(currentInvoiceNum) + 1;
@@ -2277,15 +2466,34 @@ document.addEventListener('DOMContentLoaded', () => {
       // 5. Clear active bill inputs and items
       clearActiveBill();
       
-      // 6. Redirect to settings to show the updated sales log reporting dashboard
-      window.location.hash = '#/settings';
+      // 6. Redirect to main POS home keypad view as requested by user
+      window.location.hash = '#/pos';
     };
   }
 
   if (qrWhatsappBtn) {
     qrWhatsappBtn.onclick = () => {
       if (isBillModeActive && activeSelectedBank) {
-        shareReceiptAsImage(activeSelectedBank);
+        const totals = calculateBillTotals();
+        const currentInvoiceNum = localStorage.getItem('pos_invoice_counter') || '1';
+        const custName = (billCustNameInput && billCustNameInput.value.trim()) || '-';
+        const custPhone = (billCustPhoneInput && billCustPhoneInput.value.trim()) || '-';
+        const discInputVal = parseFloat(billDiscountInput.value) || 0;
+        
+        const billData = {
+          type: 'bill',
+          invoiceNum: currentInvoiceNum,
+          custName: custName,
+          custPhone: custPhone,
+          items: [...activeBillItems],
+          discount: discInputVal,
+          discountType: billDiscountType.value,
+          grandTotal: totals.grandTotal,
+          subtotal: totals.subtotal,
+          savings: totals.savings,
+          itemCount: totals.itemCount
+        };
+        shareReceiptAsImage(activeSelectedBank, billData);
       }
     };
   }
@@ -2307,6 +2515,11 @@ document.addEventListener('DOMContentLoaded', () => {
         window.location.reload(true);
       }, 200);
     });
+  }
+
+  // Bind real-time input event listener for dynamic search filtering
+  if (filterSearchName) {
+    filterSearchName.addEventListener('input', renderSalesLogs);
   }
 
   window.addEventListener('online', processSyncQueue); // Queue worker hook

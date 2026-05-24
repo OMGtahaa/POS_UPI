@@ -206,12 +206,12 @@
         <!-- Filter Selector row -->
         <div class="filter-bar-row">
           <select id="filter-fy" class="filter-select" title="Select Financial Year">
-            <option value="all">All Years</option>
-            <option value="FY2526" selected>FY 2025-26</option>
+            <option value="all" selected>All Years</option>
+            <option value="FY2526">FY 2025-26</option>
             <option value="FY2627">FY 2026-27</option>
           </select>
           <select id="filter-month" class="filter-select" title="Select Month">
-            <option value="all">All Months</option>
+            <option value="all" selected>All Months</option>
             <option value="04">April</option>
             <option value="05">May</option>
             <option value="06">June</option>
@@ -225,6 +225,11 @@
             <option value="02">February</option>
             <option value="03">March</option>
           </select>
+        </div>
+
+        <!-- Search Bar Row -->
+        <div class="search-bar-row" style="margin-top: 10px; margin-bottom: 12px;">
+          <input type="text" id="filter-search-name" class="input-field" placeholder="🔍 Search Customer Name..." style="padding: 8px 12px; font-size: 13px; height: 36px; margin-bottom: 0; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.02); color: #fff; width: 100%; border-radius: 8px;">
         </div>
 
         <!-- Sales Stats overview (Three columns) -->
