@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Service Worker Registration ---
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=15')
+      navigator.serviceWorker.register('./sw.js?v=16')
         .then((reg) => {
           console.log('[Service Worker] Registered successfully:', reg.scope);
           
@@ -60,11 +60,11 @@ document.addEventListener('DOMContentLoaded', () => {
     { id: 'bank_icici_' + Math.random().toString(36).substr(2, 9), name: 'ICICI Bank', upiId: 'merchant@okicici', holderName: 'POS MERCHANT', color: 'card-color-icici' }
   ];
 
-  // Default Seed Data for Merchant Settings (Telegram is fully automated now)
+  // Default Seed Data for Merchant Settings
   const DEFAULT_MERCHANT = {
-    name: 'Royal Traders',
-    address: 'main line yavatmal',
-    phone: '7875452786'
+    name: 'Shop Name',
+    address: 'Shop Address',
+    phone: '0000000000'
   };
 
   // Migration utility to dynamically replace static/clashing seed bank IDs with unique IDs
@@ -487,17 +487,46 @@ document.addEventListener('DOMContentLoaded', () => {
         
       if (!historyError && cloudHistory) {
         if (cloudHistory.length > 0) {
-          transactionHistory = cloudHistory.map(h => ({
-            id: h.id,
-            amount: parseFloat(h.amount),
-            bankName: h.bank_name,
-            upiId: h.upi_id,
-            note: h.note,
-            status: h.status,
-            timestamp: h.timestamp
-          }));
+          // Intercept settings metadata row
+          const metaRow = cloudHistory.find(h => h.id === 'settings_meta');
+          if (metaRow) {
+            try {
+              const meta = JSON.parse(metaRow.note);
+              if (meta && meta.merchantProfile) {
+                merchantProfile = meta.merchantProfile;
+                localStorage.setItem('pos_merchant', JSON.stringify(merchantProfile));
+                loadSettingsForms(); // Update settings input forms & view
+              }
+              if (meta && meta.invoice_counter !== undefined) {
+                const localCounter = parseInt(localStorage.getItem('pos_invoice_counter') || '1', 10);
+                const cloudCounter = parseInt(meta.invoice_counter, 10);
+                const maxCounter = Math.max(localCounter, cloudCounter);
+                localStorage.setItem('pos_invoice_counter', maxCounter.toString());
+              }
+            } catch (e) {
+              console.error('[Supabase Pull] Error parsing settings metadata:', e);
+            }
+          } else {
+            // Push current local profile and counter to cloud since cloud has none
+            pushSettingsMetaToCloud();
+          }
+
+          transactionHistory = cloudHistory
+            .filter(h => h.id !== 'settings_meta')
+            .map(h => ({
+              id: h.id,
+              amount: parseFloat(h.amount),
+              bankName: h.bank_name,
+              upiId: h.upi_id,
+              note: h.note,
+              status: h.status,
+              timestamp: h.timestamp
+            }));
           localStorage.setItem('pos_history', JSON.stringify(transactionHistory));
           renderSalesLogs();
+        } else {
+          // Cloud history is completely empty (fresh account), push local metadata row
+          pushSettingsMetaToCloud();
         }
       } else {
         console.error('[Supabase Pull] History error:', historyError);
@@ -587,6 +616,28 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
           const cloudTx = payload.new;
+          
+          // Intercept settings metadata row
+          if (cloudTx.id === 'settings_meta') {
+            try {
+              const meta = JSON.parse(cloudTx.note);
+              if (meta && meta.merchantProfile) {
+                merchantProfile = meta.merchantProfile;
+                localStorage.setItem('pos_merchant', JSON.stringify(merchantProfile));
+                loadSettingsForms(); // Update settings input forms & view
+              }
+              if (meta && meta.invoice_counter !== undefined) {
+                const localCounter = parseInt(localStorage.getItem('pos_invoice_counter') || '1', 10);
+                const cloudCounter = parseInt(meta.invoice_counter, 10);
+                const maxCounter = Math.max(localCounter, cloudCounter);
+                localStorage.setItem('pos_invoice_counter', maxCounter.toString());
+              }
+            } catch (e) {
+              console.error('[Supabase Realtime] Error parsing settings metadata:', e);
+            }
+            return; // Skip adding settings_meta to transactionHistory array
+          }
+
           const localIndex = transactionHistory.findIndex(t => t.id === cloudTx.id);
           const formattedTx = {
             id: cloudTx.id,
@@ -639,6 +690,39 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Attempt processing
     processSyncQueue();
+  }
+
+  function pushSettingsMetaToCloud() {
+    if (!supabase || !userSession) return;
+    
+    const currentCounter = localStorage.getItem('pos_invoice_counter') || '1';
+    const payload = {
+      id: 'settings_meta',
+      amount: 0,
+      bankName: 'settings_meta',
+      upiId: 'settings_meta',
+      note: JSON.stringify({
+        merchantProfile: merchantProfile,
+        invoice_counter: currentCounter
+      }),
+      status: 'settings_meta',
+      timestamp: new Date().toISOString()
+    };
+    
+    console.log('[Supabase Sync] Syncing settings & counter to cloud...');
+    enqueueSyncTask('pos_history', 'upsert', payload);
+  }
+
+  function openWhatsAppTextFallback(custPhone, text) {
+    let url = `https://wa.me/`;
+    const cleanPhone = custPhone.replace(/\D/g, '');
+    if (cleanPhone.length === 10) {
+      url += `91${cleanPhone}`;
+    } else if (cleanPhone.length > 10) {
+      url += cleanPhone;
+    }
+    url += `?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
   }
 
   // Helper to wrap promises in a standard timeout to prevent infinite hangs in locked web sandboxes
@@ -1007,6 +1091,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Increment global invoice counter in localStorage sequentially!
         const nextInvoiceNum = parseInt(currentInvoiceNum) + 1;
         localStorage.setItem('pos_invoice_counter', nextInvoiceNum.toString());
+        
+        // Synchronize sequential invoice counter increments to cloud database in real-time
+        pushSettingsMetaToCloud();
       }
       
       addTransaction(amount, activeSelectedBank, transactionNote, 'paid');
@@ -1241,9 +1328,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const totals = calculateBillTotals();
     const custName = (billCustNameInput && billCustNameInput.value.trim()) || '-';
     const custPhone = (billCustPhoneInput && billCustPhoneInput.value.trim()) || '-';
-    const shopName = merchantProfile.name || 'Royal Traders';
-    const shopAddress = merchantProfile.address || 'main line yavatmal';
-    const shopPhone = merchantProfile.phone || '7875452786';
+    const shopName = merchantProfile.name || 'Shop Name';
+    const shopAddress = merchantProfile.address || 'Shop Address';
+    const shopPhone = merchantProfile.phone || '0000000000';
     
     const currentInvoiceNum = localStorage.getItem('pos_invoice_counter') || '1';
     
@@ -1302,8 +1389,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const totals = calculateBillTotals();
     const custName = (billCustNameInput && billCustNameInput.value.trim()) || '-';
     const custPhone = (billCustPhoneInput && billCustPhoneInput.value.trim()) || '-';
-    const shopAddress = merchantProfile.address || 'main line yavatmal';
-    const shopPhone = merchantProfile.phone || '7875452786';
+    const shopName = merchantProfile.name || 'Shop Name';
+    const shopAddress = merchantProfile.address || 'Shop Address';
+    const shopPhone = merchantProfile.phone || '0000000000';
     
     // Create an offline canvas and render details
     const canvas = document.createElement('canvas');
@@ -1488,23 +1576,28 @@ document.addEventListener('DOMContentLoaded', () => {
       const text = generateWhatsAppInvoiceText(bank);
       const custPhone = billCustPhoneInput.value.trim().replace(/\D/g, '');
       
-      // Native File Sharing path (modern PWA / Android / iOS Standalone)
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      // Robust capability detection for Web Share API
+      let isShareSupported = false;
+      try {
+        isShareSupported = navigator.canShare && navigator.canShare({ files: [file] });
+      } catch (e) {
+        console.warn('[Web Share] capability check failed:', e);
+      }
+      
+      if (isShareSupported) {
         navigator.share({
           title: `Receipt from ${shopName}`,
           text: text,
           files: [file]
         })
         .then(() => console.log('[Web Share] Shared receipt image successfully'))
-        .catch((err) => console.error('[Web Share] Image sharing failed:', err));
+        .catch((err) => {
+          console.warn('[Web Share] Image sharing failed or rejected, falling back to WhatsApp text link:', err);
+          openWhatsAppTextFallback(custPhone, text);
+        });
       } else {
-        // Text-only WhatsApp link Fallback path (Desktop or unsupporting browsers)
-        let url = `https://wa.me/`;
-        if (custPhone.length === 10) {
-          url += `91${custPhone}`;
-        }
-        url += `?text=${encodeURIComponent(text)}`;
-        window.open(url, '_blank');
+        // Robust text-only fallback (Desktop Chrome, non-HTTPS local tests)
+        openWhatsAppTextFallback(custPhone, text);
       }
     }, 'image/png');
   }
@@ -1541,6 +1634,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     merchantProfile = { name, address, phone };
     localStorage.setItem('pos_merchant', JSON.stringify(merchantProfile));
+    
+    // Sync merchant settings updates to cloud metadata row
+    pushSettingsMetaToCloud();
     
     // Visual indicator
     saveMerchantBtn.innerText = 'Saved Successfully!';
