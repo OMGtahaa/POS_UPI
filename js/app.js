@@ -1235,6 +1235,216 @@ document.addEventListener('DOMContentLoaded', () => {
     return msg;
   }
 
+  // Draw invoice on an offline canvas and share it as an image with text fallback
+  function shareReceiptAsImage(bank) {
+    if (activeBillItems.length === 0) return;
+    
+    const totals = calculateBillTotals();
+    const custName = (billCustNameInput && billCustNameInput.value.trim()) || '-';
+    const custPhone = (billCustPhoneInput && billCustPhoneInput.value.trim()) || '-';
+    const shopName = merchantProfile.name || 'Huzaifa Traders';
+    
+    // Create an offline canvas and render details
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Estimate receipt height dynamically based on items count
+    const headerHeight = 180;
+    const itemHeight = 40;
+    const footerHeight = 340;
+    canvas.width = 450;
+    canvas.height = headerHeight + (activeBillItems.length * itemHeight) + footerHeight;
+    
+    // Background (slate dark theme)
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Card border
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(8, 8, canvas.width - 16, canvas.height - 16);
+    
+    // Shop header
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 22px "Inter", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(shopName.toUpperCase(), canvas.width / 2, 45);
+    
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '12px "Inter", sans-serif';
+    ctx.fillText('Station Road, Malkapur | Ph: 9420562352', canvas.width / 2, 68);
+    
+    // Divider
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(30, 85);
+    ctx.lineTo(canvas.width - 30, 85);
+    ctx.stroke();
+    
+    // Date & Customer details
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '12px "Inter", sans-serif';
+    
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+    
+    ctx.fillText(`Date: ${dateStr}, ${timeStr}`, 30, 110);
+    ctx.fillText(`Customer: ${custName}`, 30, 130);
+    ctx.fillText(`Phone: ${custPhone}`, 30, 150);
+    
+    // Table Headers divider
+    ctx.beginPath();
+    ctx.moveTo(30, 168);
+    ctx.lineTo(canvas.width - 30, 168);
+    ctx.stroke();
+    
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 11px "Inter", sans-serif';
+    ctx.fillText('ITEM', 30, 185);
+    ctx.textAlign = 'center';
+    ctx.fillText('QTY x PRICE', canvas.width / 2 + 25, 185);
+    ctx.textAlign = 'right';
+    ctx.fillText('AMOUNT', canvas.width - 30, 185);
+    
+    ctx.beginPath();
+    ctx.moveTo(30, 195);
+    ctx.lineTo(canvas.width - 30, 195);
+    ctx.stroke();
+    
+    // Print items list
+    let currentY = 220;
+    ctx.font = '13px "Inter", sans-serif';
+    
+    activeBillItems.forEach(item => {
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(item.name, 30, currentY);
+      
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText(`${item.qty} x ₹${item.price.toFixed(2)}`, canvas.width / 2 + 25, currentY);
+      
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 13px "Inter", sans-serif';
+      ctx.fillText(`₹${(item.price * item.qty).toFixed(2)}`, canvas.width - 30, currentY);
+      
+      ctx.font = '13px "Inter", sans-serif';
+      currentY += itemHeight;
+    });
+    
+    // Bottom item divider
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.beginPath();
+    ctx.moveTo(30, currentY - 12);
+    ctx.lineTo(canvas.width - 30, currentY - 12);
+    ctx.stroke();
+    
+    // Subtotal and Savings
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '12px "Inter", sans-serif';
+    ctx.fillText(`Subtotal (${totals.itemCount} items):`, 30, currentY + 12);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(`₹${totals.subtotal.toFixed(2)}`, canvas.width - 30, currentY + 12);
+    
+    currentY += 32;
+    
+    if (totals.savings > 0) {
+      const discInputVal = parseFloat(billDiscountInput.value) || 0;
+      const discSymbol = billDiscountType.value === 'percent' ? `${discInputVal}%` : `₹${discInputVal}`;
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#10b981';
+      ctx.fillText(`Discount (${discSymbol}):`, 30, currentY);
+      ctx.textAlign = 'right';
+      ctx.fillText(`-₹${totals.savings.toFixed(2)}`, canvas.width - 30, currentY);
+      currentY += 24;
+    }
+    
+    // Grand Total Divider
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.beginPath();
+    ctx.moveTo(30, currentY - 4);
+    ctx.lineTo(canvas.width - 30, currentY - 4);
+    ctx.stroke();
+    
+    // Grand Total
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 14px "Inter", sans-serif';
+    ctx.fillText('GRAND TOTAL:', 30, currentY + 16);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#10b981';
+    ctx.font = 'bold 18px "Inter", sans-serif';
+    ctx.fillText(`₹${totals.grandTotal.toFixed(2)}`, canvas.width - 30, currentY + 16);
+    
+    currentY += 45;
+    
+    // Draw UPI Pay QR Code right on the receipt image!
+    const upiLink = `upi://pay?pa=${bank.upiId}&pn=${encodeURIComponent(shopName)}&am=${totals.grandTotal.toFixed(2)}&cu=INR`;
+    const tempCanvas = document.createElement('canvas');
+    const tempQr = new QRious({
+      element: tempCanvas,
+      value: upiLink,
+      size: 130,
+      background: '#ffffff',
+      foreground: '#0f172a',
+      level: 'M'
+    });
+    
+    // Draw white QR card background
+    ctx.fillStyle = '#ffffff';
+    const qrSize = 130;
+    const qrX = (canvas.width - qrSize) / 2;
+    ctx.fillRect(qrX - 10, currentY - 10, qrSize + 20, qrSize + 20);
+    
+    // Draw QR canvas on receipt canvas
+    ctx.drawImage(tempCanvas, qrX, currentY, qrSize, qrSize);
+    
+    currentY += qrSize + 30;
+    
+    // Footnotes
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = 'italic 10px "Inter", sans-serif';
+    ctx.fillText('Scan this QR code with your UPI app to pay', canvas.width / 2, currentY);
+    ctx.fillStyle = '#10b981';
+    ctx.font = 'bold 11px "Inter", sans-serif';
+    ctx.fillText('THANK YOU FOR YOUR VISIT!', canvas.width / 2, currentY + 22);
+    
+    // Convert receipt canvas to Blob and dispatch Web Share / WhatsApp
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      
+      const file = new File([blob], `invoice_${custName !== '-' ? custName : 'customer'}.png`, { type: 'image/png' });
+      const text = generateWhatsAppInvoiceText(bank);
+      const custPhone = billCustPhoneInput.value.trim().replace(/\D/g, '');
+      
+      // Native File Sharing path (modern PWA / Android / iOS Standalone)
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        navigator.share({
+          title: `Receipt from ${shopName}`,
+          text: text,
+          files: [file]
+        })
+        .then(() => console.log('[Web Share] Shared receipt image successfully'))
+        .catch((err) => console.error('[Web Share] Image sharing failed:', err));
+      } else {
+        // Text-only WhatsApp link Fallback path (Desktop or unsupporting browsers)
+        let url = `https://wa.me/`;
+        if (custPhone.length === 10) {
+          url += `91${custPhone}`;
+        }
+        url += `?text=${encodeURIComponent(text)}`;
+        window.open(url, '_blank');
+      }
+    }, 'image/png');
+  }
+
   // ==========================================================================
   // SETTINGS & LOGS VIEW LOGIC (CONSOLIDATED HUB)
   // ==========================================================================
@@ -1864,28 +2074,15 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       
-      const text = generateWhatsAppInvoiceText(bank);
-      const custPhone = billCustPhoneInput.value.trim().replace(/\D/g, '');
-      let url = `https://wa.me/`;
-      if (custPhone.length === 10) {
-        url += `91${custPhone}`;
-      }
-      url += `?text=${encodeURIComponent(text)}`;
-      window.open(url, '_blank');
+      // Share receipt image dynamically or fallback to WhatsApp text
+      shareReceiptAsImage(bank);
     };
   }
 
   if (qrWhatsappBtn) {
     qrWhatsappBtn.onclick = () => {
       if (isBillModeActive && activeSelectedBank) {
-        const text = generateWhatsAppInvoiceText(activeSelectedBank);
-        const custPhone = billCustPhoneInput.value.trim().replace(/\D/g, '');
-        let url = `https://wa.me/`;
-        if (custPhone.length === 10) {
-          url += `91${custPhone}`;
-        }
-        url += `?text=${encodeURIComponent(text)}`;
-        window.open(url, '_blank');
+        shareReceiptAsImage(activeSelectedBank);
       }
     };
   }
