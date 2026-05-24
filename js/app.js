@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Service Worker Registration ---
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=18')
+      navigator.serviceWorker.register('./sw.js?v=19')
         .then((reg) => {
           console.log('[Service Worker] Registered successfully:', reg.scope);
           
@@ -759,24 +759,23 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const queue = JSON.parse(localStorage.getItem('pos_sync_queue')) || [];
-    if (queue.length === 0) {
-      updateSyncStatusUI('online');
-      return;
-    }
-
     isProcessingQueue = true;
     updateSyncStatusUI('syncing');
     if (showSyncLoadingBar && loadingBar) loadingBar.classList.add('active');
 
-    console.log(`[Sync Queue] Processing ${queue.length} pending task(s)...`);
-
     try {
-      while (queue.length > 0) {
-        const task = queue[0];
+      while (true) {
+        // Read the freshest queue on each iteration to prevent memory overwrite race conditions
+        const freshestQueue = JSON.parse(localStorage.getItem('pos_sync_queue')) || [];
+        if (freshestQueue.length === 0) {
+          break;
+        }
+
+        const task = freshestQueue[0];
+        console.log(`[Sync Queue] Processing task: table=${task.table}, action=${task.action}, id=${task.payload.id}`);
+        let success = false;
+        
         try {
-          let success = false;
-          
           if (task.table === 'pos_banks') {
             if (task.action === 'delete') {
               const { error } = await withTimeout(supabase
@@ -826,8 +825,12 @@ document.addEventListener('DOMContentLoaded', () => {
           }
 
           if (success) {
-            queue.shift(); // Remove completed task
-            localStorage.setItem('pos_sync_queue', JSON.stringify(queue));
+            // Read, shift, and save back the freshest queue to prevent losing items enqueued during the await
+            const finalQueue = JSON.parse(localStorage.getItem('pos_sync_queue')) || [];
+            if (finalQueue.length > 0 && finalQueue[0].id === task.id) {
+              finalQueue.shift();
+              localStorage.setItem('pos_sync_queue', JSON.stringify(finalQueue));
+            }
           } else {
             console.warn('[Sync Queue] Task failed to write, pausing queue retry.');
             break;
