@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Service Worker Registration ---
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=12')
+      navigator.serviceWorker.register('./sw.js?v=14')
         .then((reg) => {
           console.log('[Service Worker] Registered successfully:', reg.scope);
           
@@ -39,9 +39,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- State Variables ---
   let currentAmountStr = '0'; // Raw string entered on keypad
+  let showSyncLoadingBar = false; // Flag to play the loading bar only for user-facing actions
   let activeSelectedBank = null; // Currently chosen bank for QR generation
   let activeEditBankId = null;
   let activeCardColor = 'card-color-hdfc';
+  
+  // --- Bill Maker State Variables ---
+  let activeBillItems = [];
+  let isBillModeActive = false;
   
   // Default Seed Data for Bank Accounts with dynamically assigned unique IDs to prevent DB RLS conflicts
   const DEFAULT_BANKS = [
@@ -159,7 +164,8 @@ document.addEventListener('DOMContentLoaded', () => {
     '#/pos': document.getElementById('view-pos'),
     '#/select-bank': document.getElementById('view-select-bank'),
     '#/qr': document.getElementById('view-qr'),
-    '#/settings': document.getElementById('view-settings')
+    '#/settings': document.getElementById('view-settings'),
+    '#/bill': document.getElementById('view-bill')
   };
 
   const amountDisplay = document.getElementById('pos-amount-val');
@@ -170,6 +176,29 @@ document.addEventListener('DOMContentLoaded', () => {
   const syncIndicatorText = document.getElementById('sync-indicator-text');
   const headerRefreshBtn = document.getElementById('header-refresh-btn');
   const loadingBar = document.getElementById('loading-bar');
+  
+  // Bill Maker Screen Elements
+  const viewBill = document.getElementById('view-bill');
+  const billCustNameInput = document.getElementById('bill-cust-name');
+  const billCustPhoneInput = document.getElementById('bill-cust-phone');
+  const billItemNameInput = document.getElementById('bill-item-name');
+  const billItemPriceInput = document.getElementById('bill-item-price');
+  const billItemQtyInput = document.getElementById('bill-item-qty');
+  const billItemAddBtn = document.getElementById('bill-item-add-btn');
+  const billAddItemForm = document.getElementById('bill-add-item-form');
+  const billItemsBody = document.getElementById('bill-items-body');
+  const billEmptyState = document.getElementById('bill-empty-state');
+  const billSummaryCount = document.getElementById('bill-summary-count');
+  const billSummarySubtotal = document.getElementById('bill-summary-subtotal');
+  const billDiscountInput = document.getElementById('bill-discount-input');
+  const billDiscountType = document.getElementById('bill-discount-type');
+  const billSavingsLine = document.getElementById('bill-savings-line');
+  const billSummaryTotal = document.getElementById('bill-summary-total');
+  const billProceedBtn = document.getElementById('bill-proceed-btn');
+  const billWhatsappBtn = document.getElementById('bill-whatsapp-btn');
+  const billResetBtn = document.getElementById('bill-reset-btn');
+  const headerBillBtn = document.getElementById('header-bill-btn');
+  const qrWhatsappBtn = document.getElementById('qr-whatsapp-btn');
   
   // Bank Selector View Elements
   const selectBankAmountVal = document.getElementById('select-bank-amount-val');
@@ -225,6 +254,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // HASH-BASED ROUTER
   // ==========================================================================
   function router() {
+    // Dismiss mobile keyboard on any routing change
+    if (document.activeElement) document.activeElement.blur();
+    
     let hash = window.location.hash || '#/pos';
     
     // Validate hash, fallback if invalid
@@ -259,6 +291,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Run view initialization
     if (hash === '#/pos') {
+      // If we came back to pos, let's reset bill mode and amount if it was a bill
+      if (isBillModeActive) {
+        isBillModeActive = false;
+        currentAmountStr = '0';
+      }
       updateAmountDisplay();
     } else if (hash === '#/select-bank') {
       initBankSelectorView();
@@ -266,6 +303,8 @@ document.addEventListener('DOMContentLoaded', () => {
       initQRView();
     } else if (hash === '#/settings') {
       initSettingsView();
+    } else if (hash === '#/bill') {
+      initBillView();
     }
     
     // Auto-scroll to top when screen switches
@@ -357,6 +396,7 @@ document.addEventListener('DOMContentLoaded', () => {
             updateSyncStatusUI('online');
             
             // Sync database files with localStorage on first login
+            showSyncLoadingBar = true;
             await pullCloudDatabase();
             syncPreExistingLocalData(); // Upload pre-existing local banks/transactions
             subscribeRealtimeSync();
@@ -402,7 +442,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!supabase || !userSession) return;
     
     // Show loading bar during cloud pull
-    if (loadingBar) loadingBar.classList.add('active');
+    if (showSyncLoadingBar && loadingBar) loadingBar.classList.add('active');
     
     try {
       // 1. Pull Banks
@@ -578,6 +618,9 @@ document.addEventListener('DOMContentLoaded', () => {
     queue.push({ id: taskId, table, action, payload });
     localStorage.setItem('pos_sync_queue', JSON.stringify(queue));
     
+    // Play loading bar for user-initiated write changes
+    showSyncLoadingBar = true;
+    
     // Attempt processing
     processSyncQueue();
   }
@@ -613,7 +656,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     isProcessingQueue = true;
     updateSyncStatusUI('syncing');
-    if (loadingBar) loadingBar.classList.add('active');
+    if (showSyncLoadingBar && loadingBar) loadingBar.classList.add('active');
 
     console.log(`[Sync Queue] Processing ${queue.length} pending task(s)...`);
 
@@ -686,6 +729,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } finally {
       isProcessingQueue = false;
       if (loadingBar) loadingBar.classList.remove('active');
+      showSyncLoadingBar = false; // Reset flag after sync queue processing completes
       
       const finalQueue = JSON.parse(localStorage.getItem('pos_sync_queue')) || [];
       if (finalQueue.length === 0) {
@@ -727,6 +771,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Run screen-specific render initialization
     if (screenKey === '#/pos') {
+      // If we came back to pos, let's reset bill mode and amount if it was a bill
+      if (isBillModeActive) {
+        isBillModeActive = false;
+        currentAmountStr = '0';
+      }
       renderBankSwiper();
     } else if (screenKey === '#/settings') {
       loadSettingsForms();
@@ -734,6 +783,8 @@ document.addEventListener('DOMContentLoaded', () => {
       initBankSelectorView();
     } else if (screenKey === '#/qr') {
       initQRView();
+    } else if (screenKey === '#/bill') {
+      initBillView();
     }
   }
 
@@ -918,12 +969,32 @@ document.addEventListener('DOMContentLoaded', () => {
       currentQr.value = npciUpiUrl;
     }
 
+    // Toggle WhatsApp Invoice button on QR screen based on Bill Mode
+    if (qrWhatsappBtn) {
+      if (isBillModeActive) {
+        qrWhatsappBtn.style.display = 'flex';
+      } else {
+        qrWhatsappBtn.style.display = 'none';
+      }
+    }
+
     // Trigger save on manual confirmation click
     qrConfirmPaidBtn.onclick = () => {
       let transactionNote = 'POS' + Math.floor(Math.random() * 1000000);
+      if (isBillModeActive) {
+        const custName = (billCustNameInput && billCustNameInput.value.trim()) || '-';
+        const custPhone = (billCustPhoneInput && billCustPhoneInput.value.trim()) || '-';
+        const itemsSummary = activeBillItems.map(item => `${item.name} x${item.qty}`).join(', ');
+        transactionNote = `[Bill] Cust: ${custName} | Ph: ${custPhone} | Items: ${itemsSummary}`;
+      }
+      
       addTransaction(amount, activeSelectedBank, transactionNote, 'paid');
       
       // Reset values & redirect
+      if (isBillModeActive) {
+        clearActiveBill();
+        isBillModeActive = false;
+      }
       currentAmountStr = '0';
       activeSelectedBank = null;
       window.location.hash = '#/settings'; // Go to sales log inside settings
@@ -946,6 +1017,222 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Add to Sync Queue
     enqueueSyncTask('pos_history', 'upsert', tx);
+  }
+
+  // ==========================================================================
+  // BILL MAKER SCREEN CONTROLLER
+  // ==========================================================================
+  
+  function initBillView() {
+    // Blur to hide keyboard initially on enter
+    if (document.activeElement) document.activeElement.blur();
+    
+    renderBillItems();
+    
+    // Auto-focus on Name input with small delay for transition
+    setTimeout(() => {
+      if (billItemNameInput) billItemNameInput.focus();
+    }, 250);
+  }
+  
+  function calculateBillTotals() {
+    let subtotal = 0;
+    let itemCount = 0;
+    
+    activeBillItems.forEach(item => {
+      subtotal += item.price * item.qty;
+      itemCount += item.qty;
+    });
+    
+    const discInputVal = parseFloat(billDiscountInput.value) || 0;
+    const discType = billDiscountType.value;
+    let savings = 0;
+    
+    if (discType === 'percent') {
+      savings = subtotal * (discInputVal / 100);
+    } else {
+      savings = discInputVal;
+    }
+    
+    // Cap savings at subtotal
+    if (savings > subtotal) savings = subtotal;
+    if (savings < 0) savings = 0;
+    
+    const grandTotal = subtotal - savings;
+    
+    // Update DOM
+    if (billSummaryCount) billSummaryCount.innerText = itemCount;
+    if (billSummarySubtotal) billSummarySubtotal.innerText = '₹' + subtotal.toFixed(2);
+    
+    if (billSavingsLine) {
+      if (savings > 0) {
+        billSavingsLine.style.display = 'block';
+        billSavingsLine.innerText = 'You save: ₹' + savings.toFixed(2);
+      } else {
+        billSavingsLine.style.display = 'none';
+      }
+    }
+    
+    if (billSummaryTotal) billSummaryTotal.innerText = '₹' + grandTotal.toFixed(2);
+    
+    return {
+      subtotal,
+      itemCount,
+      savings,
+      grandTotal
+    };
+  }
+  
+  function renderBillItems() {
+    if (!billItemsBody || !billEmptyState) return;
+    
+    billItemsBody.innerHTML = '';
+    
+    if (activeBillItems.length === 0) {
+      billEmptyState.style.display = 'block';
+      calculateBillTotals();
+      return;
+    }
+    
+    billEmptyState.style.display = 'none';
+    
+    activeBillItems.forEach((item, index) => {
+      const amount = item.price * item.qty;
+      const row = document.createElement('tr');
+      row.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
+      
+      row.innerHTML = `
+        <td style="padding: 8px 4px; font-weight: 500; text-align: left;">${item.name}</td>
+        <td style="padding: 8px 4px; text-align: center; color: var(--text-secondary);">₹${item.price.toFixed(2)}</td>
+        <td style="padding: 8px 4px; text-align: center; color: var(--text-secondary); font-weight: 600;">${item.qty}</td>
+        <td style="padding: 8px 4px; text-align: right; font-weight: 700;">₹${amount.toFixed(2)}</td>
+        <td style="padding: 8px 4px; text-align: center;">
+          <button class="bill-item-del-btn" data-index="${index}" title="Remove Item">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        </td>
+      `;
+      
+      // Bind delete button
+      row.querySelector('.bill-item-del-btn').addEventListener('click', (e) => {
+        const idx = parseInt(e.currentTarget.getAttribute('data-index'));
+        activeBillItems.splice(idx, 1);
+        renderBillItems();
+      });
+      
+      billItemsBody.appendChild(row);
+    });
+    
+    calculateBillTotals();
+  }
+  
+  function addBillItem() {
+    const name = billItemNameInput.value.trim();
+    const price = parseFloat(billItemPriceInput.value);
+    const qty = parseInt(billItemQtyInput.value) || 1;
+    
+    if (!name) {
+      alert('Please enter a valid item name.');
+      billItemNameInput.focus();
+      return;
+    }
+    if (isNaN(price) || price <= 0) {
+      alert('Please enter a valid price greater than 0.');
+      billItemPriceInput.focus();
+      return;
+    }
+    if (qty < 1) {
+      alert('Quantity must be 1 or more.');
+      billItemQtyInput.focus();
+      return;
+    }
+    
+    // Add to active items
+    activeBillItems.push({
+      id: 'item_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      name,
+      price,
+      qty
+    });
+    
+    // Clear inputs and refocus
+    billItemNameInput.value = '';
+    billItemPriceInput.value = '';
+    billItemQtyInput.value = '1';
+    
+    renderBillItems();
+    
+    // Focus back on Name input for high speed sequential typing
+    billItemNameInput.focus();
+  }
+  
+  function clearActiveBill() {
+    activeBillItems = [];
+    if (billCustNameInput) billCustNameInput.value = '';
+    if (billCustPhoneInput) billCustPhoneInput.value = '';
+    if (billItemNameInput) billItemNameInput.value = '';
+    if (billItemPriceInput) billItemPriceInput.value = '';
+    if (billItemQtyInput) billItemQtyInput.value = '1';
+    if (billDiscountInput) billDiscountInput.value = '0';
+    if (billDiscountType) billDiscountType.value = 'percent';
+    
+    renderBillItems();
+  }
+  
+  // Format WhatsApp invoice string
+  function generateWhatsAppInvoiceText(bank) {
+    if (!bank) return '';
+    
+    const totals = calculateBillTotals();
+    const custName = (billCustNameInput && billCustNameInput.value.trim()) || '-';
+    const custPhone = (billCustPhoneInput && billCustPhoneInput.value.trim()) || '-';
+    const shopName = merchantProfile.name || 'Huzaifa Traders';
+    
+    // Date formatting (DD/MM/YYYY, HH:MM AM/PM)
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+    
+    let msg = `Hi ${custName !== '-' ? custName : 'Customer'},\n`;
+    msg += `Thank you for visiting *${shopName}*!\n`;
+    msg += `Your invoice of *₹${totals.grandTotal.toFixed(2)}* has been successfully generated.\n\n`;
+    
+    msg += `*${shopName.toUpperCase()}*\n`;
+    msg += `Date: ${dateStr}, ${timeStr}\n`;
+    msg += `-----------------------------\n`;
+    msg += `*Customer:* ${custName}\n`;
+    msg += `*Phone:* ${custPhone}\n`;
+    msg += `-----------------------------\n\n`;
+    
+    msg += `*ITEMS SOLD:*\n`;
+    activeBillItems.forEach(item => {
+      const amt = item.price * item.qty;
+      msg += `• ${item.name}\n`;
+      msg += `  ${item.qty} × ₹${item.price.toFixed(2)} = *₹${amt.toFixed(2)}*\n`;
+    });
+    msg += `\n-----------------------------\n`;
+    msg += `Subtotal (${totals.itemCount} items): ₹${totals.subtotal.toFixed(2)}\n`;
+    
+    const discInputVal = parseFloat(billDiscountInput.value) || 0;
+    if (totals.savings > 0) {
+      const discSymbol = billDiscountType.value === 'percent' ? `${discInputVal}%` : `₹${discInputVal}`;
+      msg += `Discount (${discSymbol}): -₹${totals.savings.toFixed(2)}\n`;
+    }
+    msg += `-----------------------------\n`;
+    msg += `*TOTAL TO PAY: ₹${totals.grandTotal.toFixed(2)}*\n`;
+    msg += `-----------------------------\n\n`;
+    
+    // UPI Deep Link Generation
+    const upiLink = `upi://pay?pa=${encodeURIComponent(bank.upiId)}&pn=${encodeURIComponent(shopName)}&am=${totals.grandTotal.toFixed(2)}&cu=INR`;
+    
+    msg += `💳 *Tap to Pay via UPI link:*\n`;
+    msg += `${upiLink}\n\n`;
+    msg += `Thank you for your purchase!\n`;
+    msg += `Powered by POS Terminal`;
+    
+    return msg;
   }
 
   // ==========================================================================
@@ -1496,9 +1783,124 @@ document.addEventListener('DOMContentLoaded', () => {
     console.error('[POS Initialization] Supabase startup failed:', e);
   }
 
+  // --- Bill Maker Keyboard & Form Submit Binding ---
+  if (billItemNameInput && billItemPriceInput && billItemQtyInput) {
+    billItemNameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        billItemPriceInput.focus();
+      }
+    });
+    
+    billItemPriceInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        billItemQtyInput.focus();
+      }
+    });
+    
+    billItemQtyInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        addBillItem();
+      }
+    });
+  }
+
+  if (billAddItemForm) {
+    billAddItemForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      addBillItem();
+    });
+  }
+
+  if (billDiscountInput) {
+    billDiscountInput.addEventListener('input', () => {
+      calculateBillTotals();
+    });
+  }
+  
+  if (billDiscountType) {
+    billDiscountType.addEventListener('change', () => {
+      calculateBillTotals();
+    });
+  }
+  
+  if (billResetBtn) {
+    billResetBtn.addEventListener('click', () => {
+      if (confirm('Are you sure you want to clear this entire bill?')) {
+        clearActiveBill();
+      }
+    });
+  }
+
+  if (billProceedBtn) {
+    billProceedBtn.onclick = () => {
+      if (activeBillItems.length === 0) {
+        alert('Please add at least one item to the bill first.');
+        return;
+      }
+      const totals = calculateBillTotals();
+      
+      // Set payment state
+      isBillModeActive = true;
+      currentAmountStr = totals.grandTotal.toFixed(2);
+      
+      // Navigate to bank selection
+      window.location.hash = '#/select-bank';
+    };
+  }
+
+  if (billWhatsappBtn) {
+    billWhatsappBtn.onclick = () => {
+      if (activeBillItems.length === 0) {
+        alert('Please add at least one item to the bill first.');
+        return;
+      }
+      
+      let bank = activeSelectedBank || bankAccounts[0];
+      if (!bank) {
+        alert('Please configure at least one bank account in Settings to generate the UPI link.');
+        return;
+      }
+      
+      const text = generateWhatsAppInvoiceText(bank);
+      const custPhone = billCustPhoneInput.value.trim().replace(/\D/g, '');
+      let url = `https://wa.me/`;
+      if (custPhone.length === 10) {
+        url += `91${custPhone}`;
+      }
+      url += `?text=${encodeURIComponent(text)}`;
+      window.open(url, '_blank');
+    };
+  }
+
+  if (qrWhatsappBtn) {
+    qrWhatsappBtn.onclick = () => {
+      if (isBillModeActive && activeSelectedBank) {
+        const text = generateWhatsAppInvoiceText(activeSelectedBank);
+        const custPhone = billCustPhoneInput.value.trim().replace(/\D/g, '');
+        let url = `https://wa.me/`;
+        if (custPhone.length === 10) {
+          url += `91${custPhone}`;
+        }
+        url += `?text=${encodeURIComponent(text)}`;
+        window.open(url, '_blank');
+      }
+    };
+  }
+
+  const billBackBtn = document.getElementById('bill-back-btn');
+  if (billBackBtn) {
+    billBackBtn.addEventListener('click', () => {
+      if (document.activeElement) document.activeElement.blur();
+    });
+  }
+
   // Refresh button — hard cache-busting reload
   if (headerRefreshBtn) {
     headerRefreshBtn.addEventListener('click', () => {
+      showSyncLoadingBar = true;
       if (loadingBar) loadingBar.classList.add('active');
       // Small delay for visual feedback before reload
       setTimeout(() => {

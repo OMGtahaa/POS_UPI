@@ -869,33 +869,38 @@ html {
 
 /* Sync Header state indicators */
 .sync-indicator-header {
-  font-size: 9px;
-  text-transform: uppercase;
-  font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 20px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
   border: 1px solid transparent;
   display: flex;
   align-items: center;
-  gap: 5px;
+  justify-content: center;
   cursor: pointer;
+  transition: var(--transition-fast);
+  padding: 0;
+}
+
+#sync-indicator-text {
+  display: none !important;
 }
 
 .sync-indicator-online {
-  background: rgba(16, 185, 129, 0.1);
+  background: rgba(16, 185, 129, 0.15);
   color: var(--color-emerald);
-  border-color: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.3);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.2);
 }
 
 .sync-indicator-offline {
-  background: rgba(239, 68, 68, 0.1);
+  background: rgba(239, 68, 68, 0.15);
   color: var(--color-red);
-  border-color: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.3);
 }
 
 .sync-dot {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: currentColor;
   display: inline-block;
@@ -1005,4 +1010,115 @@ html {
   padding: 10px 12px;
   font-size: 12px;
 }
+
+/* ==========================================================================
+   BILL MAKER SCREEN STYLES (#/bill)
+   ========================================================================== */
+.bill-screen {
+  overflow-y: auto !important;
+}
+
+.bill-screen,
+.bill-screen *,
+.bill-screen input,
+.bill-screen button,
+.bill-screen select {
+  touch-action: manipulation;
+}
+
+.form-row-two {
+  display: flex;
+  gap: 8px;
+}
+
+.form-row-three {
+  display: flex;
+  gap: 6px;
+}
+
+.form-row-three input:nth-child(1) {
+  flex: 2; /* Item Name gets more space */
+}
+
+.form-row-three input:nth-child(2) {
+  flex: 1; /* Price */
+}
+
+.form-row-three input:nth-child(3) {
+  flex: 0.8; /* Qty */
+}
+
+.input-field-compact {
+  background: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 8px !important;
+  padding: 8px 10px !important;
+  color: var(--text-primary) !important;
+  font-size: 13px !important;
+  width: 100% !important;
+  outline: none !important;
+  font-family: var(--font-sans) !important;
+  transition: var(--transition-fast) !important;
+  height: 36px !important;
+}
+
+.input-field-compact:focus {
+  border-color: var(--color-emerald) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.1) !important;
+}
+
+.bill-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.bill-table th {
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 6px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  text-transform: uppercase;
+  font-size: 9px;
+  letter-spacing: 0.5px;
+}
+
+.bill-table td {
+  padding: 8px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+
+.bill-table tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.bill-item-del-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition-fast);
+}
+
+.bill-item-del-btn:hover,
+.bill-item-del-btn:active {
+  color: var(--color-red);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.bill-item-del-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+}
+
 
