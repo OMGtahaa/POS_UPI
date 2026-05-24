@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Service Worker Registration ---
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=14')
+      navigator.serviceWorker.register('./sw.js?v=15')
         .then((reg) => {
           console.log('[Service Worker] Registered successfully:', reg.scope);
           
@@ -44,6 +44,11 @@ document.addEventListener('DOMContentLoaded', () => {
   let activeEditBankId = null;
   let activeCardColor = 'card-color-hdfc';
   
+  // --- Invoice Counter State Initialization ---
+  if (!localStorage.getItem('pos_invoice_counter')) {
+    localStorage.setItem('pos_invoice_counter', '1');
+  }
+  
   // --- Bill Maker State Variables ---
   let activeBillItems = [];
   let isBillModeActive = false;
@@ -57,7 +62,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Default Seed Data for Merchant Settings (Telegram is fully automated now)
   const DEFAULT_MERCHANT = {
-    name: 'POS Merchant'
+    name: 'Royal Traders',
+    address: 'main line yavatmal',
+    phone: '7875452786'
   };
 
   // Migration utility to dynamically replace static/clashing seed bank IDs with unique IDs
@@ -199,6 +206,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const billResetBtn = document.getElementById('bill-reset-btn');
   const headerBillBtn = document.getElementById('header-bill-btn');
   const qrWhatsappBtn = document.getElementById('qr-whatsapp-btn');
+  const billBankSelect = document.getElementById('bill-bank-select');
+  const billInvoiceNum = document.getElementById('bill-invoice-num');
   
   // Bank Selector View Elements
   const selectBankAmountVal = document.getElementById('select-bank-amount-val');
@@ -213,6 +222,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Settings View Forms
   const merchantNameInput = document.getElementById('settings-merchant-name');
+  const merchantAddressInput = document.getElementById('settings-merchant-address');
+  const merchantPhoneInput = document.getElementById('settings-merchant-phone');
   const saveMerchantBtn = document.getElementById('save-merchant-btn');
   
   const bankNameInput = document.getElementById('settings-bank-name');
@@ -574,21 +585,26 @@ document.addEventListener('DOMContentLoaded', () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pos_history' }, async (payload) => {
         console.log('[Supabase Realtime] Sales log change received:', payload);
         
-        if (payload.eventType === 'INSERT') {
+        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
           const cloudTx = payload.new;
-          if (!transactionHistory.some(t => t.id === cloudTx.id)) {
-            transactionHistory.unshift({
-              id: cloudTx.id,
-              amount: parseFloat(cloudTx.amount),
-              bankName: cloudTx.bank_name,
-              upiId: cloudTx.upi_id,
-              note: cloudTx.note,
-              status: cloudTx.status,
-              timestamp: cloudTx.timestamp
-            });
-            localStorage.setItem('pos_history', JSON.stringify(transactionHistory));
-            renderSalesLogs();
+          const localIndex = transactionHistory.findIndex(t => t.id === cloudTx.id);
+          const formattedTx = {
+            id: cloudTx.id,
+            amount: parseFloat(cloudTx.amount),
+            bankName: cloudTx.bank_name,
+            upiId: cloudTx.upi_id,
+            note: cloudTx.note,
+            status: cloudTx.status,
+            timestamp: cloudTx.timestamp
+          };
+          
+          if (localIndex >= 0) {
+            transactionHistory[localIndex] = formattedTx;
+          } else {
+            transactionHistory.unshift(formattedTx);
           }
+          localStorage.setItem('pos_history', JSON.stringify(transactionHistory));
+          renderSalesLogs();
         } else if (payload.eventType === 'DELETE') {
           transactionHistory = transactionHistory.filter(t => t.id !== payload.old.id);
           localStorage.setItem('pos_history', JSON.stringify(transactionHistory));
@@ -982,10 +998,15 @@ document.addEventListener('DOMContentLoaded', () => {
     qrConfirmPaidBtn.onclick = () => {
       let transactionNote = 'POS' + Math.floor(Math.random() * 1000000);
       if (isBillModeActive) {
+        const currentInvoiceNum = localStorage.getItem('pos_invoice_counter') || '1';
         const custName = (billCustNameInput && billCustNameInput.value.trim()) || '-';
         const custPhone = (billCustPhoneInput && billCustPhoneInput.value.trim()) || '-';
         const itemsSummary = activeBillItems.map(item => `${item.name} x${item.qty}`).join(', ');
-        transactionNote = `[Bill] Cust: ${custName} | Ph: ${custPhone} | Items: ${itemsSummary}`;
+        transactionNote = `[Bill #${currentInvoiceNum}] Cust: ${custName} | Ph: ${custPhone} | Items: ${itemsSummary}`;
+        
+        // Increment global invoice counter in localStorage sequentially!
+        const nextInvoiceNum = parseInt(currentInvoiceNum) + 1;
+        localStorage.setItem('pos_invoice_counter', nextInvoiceNum.toString());
       }
       
       addTransaction(amount, activeSelectedBank, transactionNote, 'paid');
@@ -1028,11 +1049,43 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.activeElement) document.activeElement.blur();
     
     renderBillItems();
+    populateBillBankSelector(); // Dynamic bank selector
+    
+    // Display current sequence number in the header
+    const currentInvoiceNum = localStorage.getItem('pos_invoice_counter') || '1';
+    if (billInvoiceNum) billInvoiceNum.innerText = '#' + currentInvoiceNum;
     
     // Auto-focus on Name input with small delay for transition
     setTimeout(() => {
       if (billItemNameInput) billItemNameInput.focus();
     }, 250);
+  }
+
+  function populateBillBankSelector() {
+    if (!billBankSelect) return;
+    billBankSelect.innerHTML = '';
+    if (bankAccounts.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.innerText = 'No Banks Configured';
+      billBankSelect.appendChild(opt);
+      return;
+    }
+    
+    bankAccounts.forEach(bank => {
+      const opt = document.createElement('option');
+      opt.value = bank.id;
+      opt.innerText = bank.name;
+      billBankSelect.appendChild(opt);
+    });
+    
+    // Set selection to current activeSelectedBank if set, else fallback to first bank
+    if (activeSelectedBank) {
+      billBankSelect.value = activeSelectedBank.id;
+    } else if (bankAccounts.length > 0) {
+      billBankSelect.value = bankAccounts[0].id;
+      activeSelectedBank = bankAccounts[0];
+    }
   }
   
   function calculateBillTotals() {
@@ -1181,14 +1234,18 @@ document.addEventListener('DOMContentLoaded', () => {
     renderBillItems();
   }
   
-  // Format WhatsApp invoice string
+    // Format WhatsApp invoice string
   function generateWhatsAppInvoiceText(bank) {
     if (!bank) return '';
     
     const totals = calculateBillTotals();
     const custName = (billCustNameInput && billCustNameInput.value.trim()) || '-';
     const custPhone = (billCustPhoneInput && billCustPhoneInput.value.trim()) || '-';
-    const shopName = merchantProfile.name || 'Huzaifa Traders';
+    const shopName = merchantProfile.name || 'Royal Traders';
+    const shopAddress = merchantProfile.address || 'main line yavatmal';
+    const shopPhone = merchantProfile.phone || '7875452786';
+    
+    const currentInvoiceNum = localStorage.getItem('pos_invoice_counter') || '1';
     
     // Date formatting (DD/MM/YYYY, HH:MM AM/PM)
     const now = new Date();
@@ -1200,6 +1257,10 @@ document.addEventListener('DOMContentLoaded', () => {
     msg += `Your invoice of *₹${totals.grandTotal.toFixed(2)}* has been successfully generated.\n\n`;
     
     msg += `*${shopName.toUpperCase()}*\n`;
+    msg += `${shopAddress}\n`;
+    msg += `Ph: ${shopPhone}\n\n`;
+    
+    msg += `*Invoice #${currentInvoiceNum}*\n`;
     msg += `Date: ${dateStr}, ${timeStr}\n`;
     msg += `-----------------------------\n`;
     msg += `*Customer:* ${custName}\n`;
@@ -1229,8 +1290,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     msg += `💳 *Tap to Pay via UPI link:*\n`;
     msg += `${upiLink}\n\n`;
-    msg += `Thank you for your purchase!\n`;
-    msg += `Powered by POS Terminal`;
+    msg += `Thank you for your purchase!`;
     
     return msg;
   }
@@ -1242,14 +1302,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const totals = calculateBillTotals();
     const custName = (billCustNameInput && billCustNameInput.value.trim()) || '-';
     const custPhone = (billCustPhoneInput && billCustPhoneInput.value.trim()) || '-';
-    const shopName = merchantProfile.name || 'Huzaifa Traders';
+    const shopAddress = merchantProfile.address || 'main line yavatmal';
+    const shopPhone = merchantProfile.phone || '7875452786';
     
     // Create an offline canvas and render details
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     
     // Estimate receipt height dynamically based on items count
-    const headerHeight = 180;
+    const headerHeight = 190;
     const itemHeight = 40;
     const footerHeight = 340;
     canvas.width = 450;
@@ -1272,7 +1333,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     ctx.fillStyle = '#94a3b8';
     ctx.font = '12px "Inter", sans-serif';
-    ctx.fillText('Station Road, Malkapur | Ph: 9420562352', canvas.width / 2, 68);
+    ctx.fillText(`${shopAddress} | Ph: ${shopPhone}`, canvas.width / 2, 68);
     
     // Divider
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
@@ -1291,31 +1352,34 @@ document.addEventListener('DOMContentLoaded', () => {
     const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
     const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
     
-    ctx.fillText(`Date: ${dateStr}, ${timeStr}`, 30, 110);
-    ctx.fillText(`Customer: ${custName}`, 30, 130);
-    ctx.fillText(`Phone: ${custPhone}`, 30, 150);
+    const currentInvoiceNum = localStorage.getItem('pos_invoice_counter') || '1';
+    
+    ctx.fillText(`Invoice #: ${currentInvoiceNum}`, 30, 105);
+    ctx.fillText(`Date: ${dateStr}, ${timeStr}`, 30, 122);
+    ctx.fillText(`Customer: ${custName}`, 30, 139);
+    ctx.fillText(`Phone: ${custPhone}`, 30, 156);
     
     // Table Headers divider
     ctx.beginPath();
-    ctx.moveTo(30, 168);
-    ctx.lineTo(canvas.width - 30, 168);
+    ctx.moveTo(30, 175);
+    ctx.lineTo(canvas.width - 30, 175);
     ctx.stroke();
     
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 11px "Inter", sans-serif';
-    ctx.fillText('ITEM', 30, 185);
+    ctx.fillText('ITEM', 30, 192);
     ctx.textAlign = 'center';
-    ctx.fillText('QTY x PRICE', canvas.width / 2 + 25, 185);
+    ctx.fillText('QTY x PRICE', canvas.width / 2 + 25, 192);
     ctx.textAlign = 'right';
-    ctx.fillText('AMOUNT', canvas.width - 30, 185);
+    ctx.fillText('AMOUNT', canvas.width - 30, 192);
     
     ctx.beginPath();
-    ctx.moveTo(30, 195);
-    ctx.lineTo(canvas.width - 30, 195);
+    ctx.moveTo(30, 202);
+    ctx.lineTo(canvas.width - 30, 202);
     ctx.stroke();
     
     // Print items list
-    let currentY = 220;
+    let currentY = 227;
     ctx.font = '13px "Inter", sans-serif';
     
     activeBillItems.forEach(item => {
@@ -1450,7 +1514,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================================================================
   function loadSettingsForms() {
     // Load profile
-    merchantNameInput.value = merchantProfile.name;
+    merchantNameInput.value = merchantProfile.name || '';
+    merchantAddressInput.value = merchantProfile.address || '';
+    merchantPhoneInput.value = merchantProfile.phone || '';
     
     // Clear forms & re-render lists
     resetBankForm();
@@ -1462,16 +1528,18 @@ document.addEventListener('DOMContentLoaded', () => {
     loadSettingsForms();
   }
 
-  // Save Merchant Profile Business Name
+  // Save Merchant Profile
   saveMerchantBtn.addEventListener('click', () => {
     const name = merchantNameInput.value.trim();
+    const address = merchantAddressInput.value.trim();
+    const phone = merchantPhoneInput.value.trim();
 
     if (!name) {
       alert('Business Payee Name is required!');
       return;
     }
 
-    merchantProfile = { name };
+    merchantProfile = { name, address, phone };
     localStorage.setItem('pos_merchant', JSON.stringify(merchantProfile));
     
     // Visual indicator
@@ -1480,7 +1548,7 @@ document.addEventListener('DOMContentLoaded', () => {
     saveMerchantBtn.style.backgroundColor = '#065f46';
     
     setTimeout(() => {
-      saveMerchantBtn.innerText = 'Save Business Name';
+      saveMerchantBtn.innerText = 'Save Profile Details';
       saveMerchantBtn.classList.add('btn-emerald');
       saveMerchantBtn.style.backgroundColor = '';
     }, 2000);
@@ -1647,6 +1715,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================================================================
   function renderSalesLogs() {
     historyListContainer.innerHTML = '';
+    
+    // FILTER OUT DELETED TRANSACTIONS FOR ANALYTICS AND DISPLAY LISTS
+    const activeHistory = transactionHistory.filter(tx => tx.status !== 'deleted');
 
     const selectedFy = filterFy.value; // "all", "FY2526", "FY2627"
     const selectedMonth = filterMonth.value; // "all", "04", "05", etc.
@@ -1663,7 +1734,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Filter transaction list based on select dropdowns
-    let filteredHistory = transactionHistory.filter(tx => {
+    let filteredHistory = activeHistory.filter(tx => {
       const txDate = new Date(tx.timestamp);
       const txYear = txDate.getFullYear();
       const txMonthStr = String(txDate.getMonth() + 1).padStart(2, '0'); // "01"-"12"
@@ -1697,7 +1768,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let todayEnd = new Date();
     todayEnd.setHours(23, 59, 59, 999);
 
-    transactionHistory.forEach(tx => {
+    activeHistory.forEach(tx => {
       const txDate = new Date(tx.timestamp);
       if (txDate.getTime() >= todayStart.getTime() && txDate.getTime() <= todayEnd.getTime() && tx.status === 'paid') {
         dailyTotal += tx.amount;
@@ -1715,7 +1786,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // All Time Total: Absolute overall sum of all paid transactions ever logged!
     let allTimeTotal = 0;
-    transactionHistory.forEach(tx => {
+    activeHistory.forEach(tx => {
       if (tx.status === 'paid') {
         allTimeTotal += tx.amount;
       }
@@ -1805,8 +1876,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!txToDelete) return;
         
         if (confirm(`Delete this ${new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(txToDelete.amount)} transaction?`)) {
-          enqueueSyncTask('pos_history', 'delete', txToDelete);
-          transactionHistory = transactionHistory.filter(t => t.id !== txId);
+          txToDelete.status = 'deleted'; // Mark status as deleted (Soft Delete Audit)
+          enqueueSyncTask('pos_history', 'upsert', txToDelete); // Push update to Supabase
           localStorage.setItem('pos_history', JSON.stringify(transactionHistory));
           renderSalesLogs();
         }
@@ -1854,10 +1925,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (confirm(label)) {
         transactionHistory.forEach(tx => {
           if (filteredIds.has(tx.id)) {
-            enqueueSyncTask('pos_history', 'delete', tx);
+            tx.status = 'deleted'; // Soft Delete Audit
+            enqueueSyncTask('pos_history', 'upsert', tx);
           }
         });
-        transactionHistory = transactionHistory.filter(tx => !filteredIds.has(tx.id));
         localStorage.setItem('pos_history', JSON.stringify(transactionHistory));
         renderSalesLogs();
       }
@@ -1869,11 +1940,11 @@ document.addEventListener('DOMContentLoaded', () => {
     clearAllHistoryBtn.addEventListener('click', () => {
       if (transactionHistory.length === 0) return;
       
-      if (confirm('Are you sure you want to clear ALL transaction history logs? This will delete them from the cloud database too!')) {
+      if (confirm('Are you sure you want to clear ALL transaction history logs? This will mark them as deleted in the cloud database too!')) {
         transactionHistory.forEach(tx => {
-          enqueueSyncTask('pos_history', 'delete', tx);
+          tx.status = 'deleted'; // Soft Delete Audit
+          enqueueSyncTask('pos_history', 'upsert', tx);
         });
-        transactionHistory = [];
         localStorage.setItem('pos_history', JSON.stringify(transactionHistory));
         renderSalesLogs();
       }
@@ -2044,20 +2115,39 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  if (billBankSelect) {
+    billBankSelect.addEventListener('change', () => {
+      const selectedBankId = billBankSelect.value;
+      activeSelectedBank = bankAccounts.find(b => b.id === selectedBankId) || bankAccounts[0];
+    });
+  }
+
   if (billProceedBtn) {
     billProceedBtn.onclick = () => {
       if (activeBillItems.length === 0) {
         alert('Please add at least one item to the bill first.');
         return;
       }
+      
+      // Ensure active selected bank is updated from the dropdown
+      if (billBankSelect) {
+        const selectedBankId = billBankSelect.value;
+        activeSelectedBank = bankAccounts.find(b => b.id === selectedBankId) || bankAccounts[0];
+      }
+      
+      if (!activeSelectedBank) {
+        alert('Please configure at least one bank account in Settings to generate the UPI link.');
+        return;
+      }
+      
       const totals = calculateBillTotals();
       
       // Set payment state
       isBillModeActive = true;
       currentAmountStr = totals.grandTotal.toFixed(2);
       
-      // Navigate to bank selection
-      window.location.hash = '#/select-bank';
+      // Navigate DIRECTLY to QR display screen, bypassing bank selector view!
+      window.location.hash = '#/qr';
     };
   }
 
@@ -2068,7 +2158,13 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       
-      let bank = activeSelectedBank || bankAccounts[0];
+      // Ensure bank is selected from dropdown
+      let bank = activeSelectedBank;
+      if (billBankSelect) {
+        const selectedBankId = billBankSelect.value;
+        bank = bankAccounts.find(b => b.id === selectedBankId) || bankAccounts[0];
+      }
+      
       if (!bank) {
         alert('Please configure at least one bank account in Settings to generate the UPI link.');
         return;

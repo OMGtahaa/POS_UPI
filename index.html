@@ -269,10 +269,20 @@
         
         <div class="form-group" style="margin-top: 12px;">
           <label for="settings-merchant-name">Business / Payee Name</label>
-          <input type="text" id="settings-merchant-name" class="input-field" placeholder="Enter Business Name (e.g. Ram Stores)">
+          <input type="text" id="settings-merchant-name" class="input-field" placeholder="Enter Business Name (e.g. Royal Traders)">
         </div>
         
-        <button class="btn btn-emerald" id="save-merchant-btn">Save Business Name</button>
+        <div class="form-group">
+          <label for="settings-merchant-address">Shop Address</label>
+          <input type="text" id="settings-merchant-address" class="input-field" placeholder="e.g. main line yavatmal">
+        </div>
+        
+        <div class="form-group">
+          <label for="settings-merchant-phone">Shop Phone Number</label>
+          <input type="tel" id="settings-merchant-phone" class="input-field" placeholder="e.g. 7875452786" maxlength="10">
+        </div>
+        
+        <button class="btn btn-emerald" id="save-merchant-btn">Save Profile Details</button>
       </div>
 
       <!-- CATEGORY 3: BANK ACCOUNT CONFIGURATION -->
@@ -363,7 +373,7 @@
         <span class="settings-label">ℹ️ About the Creator</span>
         <div style="margin-top: 12px; font-size: 13px; color: var(--text-secondary); line-height: 1.6; text-align: center;">
           <div style="font-weight: 700; color: var(--text-primary); font-size: 15px; margin-bottom: 2px;">POS UPI Terminal</div>
-          <div style="color: var(--color-emerald); font-weight: 600; font-size: 11px; margin-bottom: 12px; letter-spacing: 0.5px;">Version 1.4.0 (WhatsApp Bill Maker & UI Refinements)</div>
+          <div style="color: var(--color-emerald); font-weight: 600; font-size: 11px; margin-bottom: 12px; letter-spacing: 0.5px;">Version 1.5.0 (Sequential Invoices & Bypass Checkout)</div>
           <p style="margin-bottom: 4px;">This application was conceptualized and created by</p>
           <div style="font-weight: 700; color: #ffffff; font-size: 18px; margin-top: 6px; margin-bottom: 8px; letter-spacing: 0.5px; background: linear-gradient(135deg, #3b82f6 0%, #10b981 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; display: inline-block;">Tahaa Sabir</div>
           <p style="font-size: 11px; color: var(--text-muted);">Designed for secure, reliable, and instant merchant offline transactions.</p>
@@ -381,7 +391,7 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
           </svg>
         </a>
-        <h1>Bill Maker</h1>
+        <h1>Bill Maker <span id="bill-invoice-num" style="font-size: 13px; color: var(--text-secondary); font-weight: 500; margin-left: 8px;">#1</span></h1>
         <button class="icon-btn" id="bill-reset-btn" title="Reset/Clear Bill" style="color: var(--color-red); border-color: rgba(239,68,68,0.15); background: rgba(239,68,68,0.05);">
           <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -467,6 +477,13 @@
         <div class="grand-total-row" style="margin-top: 12px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 10px; display: flex; align-items: center; justify-content: space-between;">
           <span style="font-size: 14px; font-weight: 700; color: #ffffff;">GRAND TOTAL</span>
           <span id="bill-summary-total" style="font-size: 20px; font-weight: 800; color: var(--color-emerald);">₹0.00</span>
+        </div>
+        
+        <div class="bank-selector-row" style="margin-top: 12px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+          <label style="font-size: 12px; color: var(--text-secondary); font-weight: 600;">Payment Bank:</label>
+          <select id="bill-bank-select" class="filter-select" style="padding: 6px; width: 165px; font-size: 12px; border-radius: 8px; height: 32px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); color: #fff;">
+            <!-- Configured bank options populated here dynamically -->
+          </select>
         </div>
       </div>
 
