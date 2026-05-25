@@ -1,0 +1,45 @@
+# POS UPI Terminal Git Ignore
+# Exclude local workspace, logs, and system files
+
+# Dependency directories
+node_modules/
+jspm_packages/
+web_modules/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+*.log
+
+# OS Metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDEs and editors
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Local environments / API secret overrides
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.private
+*.key
+*.secret
+
+# Temp / Cache files
+.eslintcache
+.parcel-cache
+.cache/
+dist/
+build/

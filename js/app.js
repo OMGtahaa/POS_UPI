@@ -3,10 +3,21 @@
    ========================================================================== */
 
 document.addEventListener('DOMContentLoaded', () => {
+  // HTML escaping helper for XSS security
+  function escapeHTML(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
   // --- Service Worker Registration ---
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=24')
+      navigator.serviceWorker.register('./sw.js?v=25')
         .then((reg) => {
           console.log('[Service Worker] Registered successfully:', reg.scope);
           
@@ -2081,7 +2092,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const itemsListHtml = billData.items.map(item => `
           <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 2px; color: var(--text-secondary);">
-            <span>• ${item.name} (x${item.qty})</span>
+            <span>• ${escapeHTML(item.name)} (x${escapeHTML(item.qty)})</span>
             <span>₹${(item.price * item.qty).toFixed(2)}</span>
           </div>
         `).join('');
@@ -2089,8 +2100,8 @@ document.addEventListener('DOMContentLoaded', () => {
         detailsHtml = `
           <div class="history-item-details" style="display: none; margin-top: 10px; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 10px; user-select: text;">
             <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; line-height: 1.4;">
-              <strong>Bill Details (Invoice #${billData.invoiceNum})</strong><br>
-              Customer: <span style="color:#fff;">${billData.custName}</span> | Phone: <span style="color:#fff;">${billData.custPhone}</span>
+              <strong>Bill Details (Invoice #${escapeHTML(billData.invoiceNum)})</strong><br>
+              Customer: <span style="color:#fff;">${escapeHTML(billData.custName)}</span> | Phone: <span style="color:#fff;">${escapeHTML(billData.custPhone)}</span>
             </div>
             <div style="margin-bottom: 8px;">
               ${itemsListHtml}
@@ -2110,7 +2121,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         detailsHtml = `
           <div class="history-item-details" style="display: none; margin-top: 10px; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 10px; font-size: 11px; color: var(--text-muted);">
-            <strong>Transaction Note:</strong> ${displayNote}
+            <strong>Transaction Note:</strong> ${escapeHTML(displayNote)}
           </div>
         `;
       }
@@ -2389,6 +2400,8 @@ document.addEventListener('DOMContentLoaded', () => {
     migrateSeededBankIds(); // Run self-healing migration to replace clashing seeded bank IDs and avoid DB RLS errors
     updateAmountDisplay();
     router();
+    updatePinLockoutState();
+    updateRecoveryLinkState();
   } catch (e) {
     console.error('[POS Initialization] Routing error:', e);
   }
@@ -2733,6 +2746,109 @@ document.addEventListener('DOMContentLoaded', () => {
   const pinDots = document.querySelectorAll('.pin-dot');
   const pinKeys = document.querySelectorAll('.pin-key[data-val]');
 
+  // --- PIN Brute-Force lockout protection ---
+  let pinLockoutTimer = null;
+  function updatePinLockoutState() {
+    const expiry = localStorage.getItem('pos_pin_lockout_expiry');
+    const pinSubtitle = document.querySelector('#admin-pin-modal .pin-modal-subtitle');
+    const pinLockIcon = document.querySelector('#admin-pin-modal .pin-modal-lock-icon');
+    const pinTitle = document.querySelector('#admin-pin-modal .pin-modal-title');
+    const keypadButtons = document.querySelectorAll('#admin-pin-modal .pin-key');
+
+    if (expiry) {
+      const remaining = Math.ceil((parseInt(expiry) - Date.now()) / 1000);
+      if (remaining > 0) {
+        // Locked Out!
+        if (pinSubtitle) {
+          pinSubtitle.textContent = `Too many failed attempts. Try again in ${remaining}s.`;
+          pinSubtitle.style.color = '#ef4444';
+        }
+        if (pinLockIcon) pinLockIcon.textContent = '⏳';
+        if (pinTitle) pinTitle.textContent = 'Keypad Locked';
+        
+        // Disable keys
+        keypadButtons.forEach(btn => {
+          btn.style.pointerEvents = 'none';
+          btn.style.opacity = '0.3';
+        });
+
+        // Clear input
+        enteredPin = '';
+        resetPinDots();
+
+        if (pinLockoutTimer) clearInterval(pinLockoutTimer);
+        pinLockoutTimer = setInterval(() => {
+          const currentRemaining = Math.ceil((parseInt(expiry) - Date.now()) / 1000);
+          if (currentRemaining <= 0) {
+            clearInterval(pinLockoutTimer);
+            pinLockoutTimer = null;
+            localStorage.removeItem('pos_pin_lockout_expiry');
+            localStorage.removeItem('pos_pin_failed_attempts');
+            
+            // Restore active state
+            if (pinSubtitle) {
+              pinSubtitle.textContent = 'Access restricted to authorized personnel only.';
+              pinSubtitle.style.color = 'var(--text-muted)';
+            }
+            if (pinLockIcon) pinLockIcon.textContent = '🔒';
+            if (pinTitle) pinTitle.textContent = 'Enter Admin PIN';
+            keypadButtons.forEach(btn => {
+              btn.style.pointerEvents = 'auto';
+              btn.style.opacity = '1';
+            });
+          } else {
+            if (pinSubtitle) pinSubtitle.textContent = `Too many failed attempts. Try again in ${currentRemaining}s.`;
+          }
+        }, 1000);
+        return true;
+      }
+    }
+    
+    // Not locked out (cleanup if expired)
+    if (localStorage.getItem('pos_pin_lockout_expiry')) {
+      localStorage.removeItem('pos_pin_lockout_expiry');
+      localStorage.removeItem('pos_pin_failed_attempts');
+    }
+    return false;
+  }
+
+  // --- Synced Recovery Link Rate Limiting ---
+  let recoveryCooldownTimer = null;
+  function updateRecoveryLinkState() {
+    const recoveryForgotLink = document.getElementById('recovery-forgot-password-link');
+    if (!recoveryForgotLink) return;
+    const expiry = localStorage.getItem('pos_recovery_cooldown_expiry');
+    if (expiry) {
+      const remaining = Math.ceil((parseInt(expiry) - Date.now()) / 1000);
+      if (remaining > 0) {
+        recoveryForgotLink.style.pointerEvents = 'none';
+        recoveryForgotLink.style.opacity = '0.5';
+        recoveryForgotLink.textContent = `Forgot cloud sync password? (Wait ${remaining}s)`;
+        
+        if (recoveryCooldownTimer) clearInterval(recoveryCooldownTimer);
+        recoveryCooldownTimer = setInterval(() => {
+          const currentRemaining = Math.ceil((parseInt(expiry) - Date.now()) / 1000);
+          if (currentRemaining <= 0) {
+            clearInterval(recoveryCooldownTimer);
+            recoveryCooldownTimer = null;
+            recoveryForgotLink.style.pointerEvents = 'auto';
+            recoveryForgotLink.style.opacity = '1';
+            recoveryForgotLink.textContent = 'Forgot cloud sync password?';
+            localStorage.removeItem('pos_recovery_cooldown_expiry');
+          } else {
+            recoveryForgotLink.textContent = `Forgot cloud sync password? (Wait ${currentRemaining}s)`;
+          }
+        }, 1000);
+        return;
+      }
+    }
+    
+    // Default active state
+    recoveryForgotLink.style.pointerEvents = 'auto';
+    recoveryForgotLink.style.opacity = '1';
+    recoveryForgotLink.textContent = 'Forgot cloud sync password?';
+  }
+
   if (btnToggleStaff) {
     btnToggleStaff.addEventListener('click', () => {
       isAdminModeActive = false;
@@ -2749,6 +2865,7 @@ document.addEventListener('DOMContentLoaded', () => {
         adminPinModal.style.display = 'flex';
         enteredPin = '';
         resetPinDots();
+        updatePinLockoutState();
       }
     });
   }
@@ -2761,6 +2878,14 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function handlePinInput(val) {
+    // Prevent entry if locked out
+    if (localStorage.getItem('pos_pin_lockout_expiry')) {
+      const expiry = parseInt(localStorage.getItem('pos_pin_lockout_expiry'));
+      if (expiry > Date.now()) {
+        return;
+      }
+    }
+
     if (enteredPin.length < 4) {
       enteredPin += val;
       updatePinDots();
@@ -2769,23 +2894,40 @@ document.addEventListener('DOMContentLoaded', () => {
         const correctPin = localStorage.getItem('pos_admin_pin') || '1234';
         if (enteredPin === correctPin) {
           isAdminModeActive = true;
+          localStorage.removeItem('pos_pin_failed_attempts');
+          localStorage.removeItem('pos_pin_lockout_expiry');
           setTimeout(() => {
             if (adminPinModal) adminPinModal.style.display = 'none';
             updateSettingsViewMode();
           }, 200);
         } else {
-          // Flash error dots
-          pinDots.forEach(dot => dot.classList.add('error'));
-          setTimeout(() => {
-            enteredPin = '';
-            resetPinDots();
-          }, 600);
+          // Increment failed attempts
+          let failed = parseInt(localStorage.getItem('pos_pin_failed_attempts') || '0');
+          failed++;
+          localStorage.setItem('pos_pin_failed_attempts', failed.toString());
+          
+          if (failed >= 5) {
+            // Trigger 30-second lockout
+            localStorage.setItem('pos_pin_lockout_expiry', (Date.now() + 30000).toString());
+            updatePinLockoutState();
+          } else {
+            // Flash error dots
+            pinDots.forEach(dot => dot.classList.add('error'));
+            setTimeout(() => {
+              enteredPin = '';
+              resetPinDots();
+            }, 600);
+          }
         }
       }
     }
   }
 
   function handlePinDelete() {
+    if (localStorage.getItem('pos_pin_lockout_expiry')) {
+      const expiry = parseInt(localStorage.getItem('pos_pin_lockout_expiry'));
+      if (expiry > Date.now()) return;
+    }
     if (enteredPin.length > 0) {
       enteredPin = enteredPin.slice(0, -1);
       updatePinDots();
@@ -2816,6 +2958,15 @@ document.addEventListener('DOMContentLoaded', () => {
   // laptop physical keyboard entry mapping
   document.addEventListener('keydown', (e) => {
     if (adminPinModal && adminPinModal.style.display === 'flex') {
+      // Check lockout first
+      if (localStorage.getItem('pos_pin_lockout_expiry')) {
+        const expiry = parseInt(localStorage.getItem('pos_pin_lockout_expiry'));
+        if (expiry > Date.now()) {
+          e.preventDefault();
+          return;
+        }
+      }
+      
       const key = e.key;
       if (/^[0-9]$/.test(key)) {
         e.preventDefault();
@@ -2868,6 +3019,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (pinRecoveryModal) {
           pinRecoveryModal.style.display = 'flex';
+          updateRecoveryLinkState(); // Run the link rate limit check on open
           if (recoveryPasswordInput) recoveryPasswordInput.focus();
         }
       } else {
@@ -2895,6 +3047,11 @@ document.addEventListener('DOMContentLoaded', () => {
   if (recoveryForgotLink) {
     recoveryForgotLink.addEventListener('click', async (e) => {
       e.preventDefault();
+      
+      // Cooldown checks
+      const expiry = localStorage.getItem('pos_recovery_cooldown_expiry');
+      if (expiry && parseInt(expiry) > Date.now()) return;
+
       try {
         if (!supabase) {
           alert('Supabase database sync is not initialized!');
@@ -2911,6 +3068,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (error) {
           alert('Error sending recovery email: ' + error.message);
         } else {
+          // Set client-side 1-minute cooldown
+          localStorage.setItem('pos_recovery_cooldown_expiry', (Date.now() + 60000).toString());
+          updateRecoveryLinkState();
           alert('Recovery email sent! Please check your inbox for the link to reset your cloud password and local PIN.');
           if (pinRecoveryModal) pinRecoveryModal.style.display = 'none';
         }
