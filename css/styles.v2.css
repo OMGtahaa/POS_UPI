@@ -519,7 +519,7 @@ html {
 /* --- Settings & Sales Log --- */
 .settings-screen {
   overflow-y: auto;
-  padding-bottom: calc(30px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: 40px;
 }
 
 .settings-group {
@@ -1006,7 +1006,7 @@ html {
 /* --- Bill Maker --- */
 .bill-screen {
   overflow-y: auto !important;
-  padding-bottom: calc(30px + env(safe-area-inset-bottom, 0px)) !important;
+  padding-bottom: 40px !important;
 }
 
 .bill-screen,
