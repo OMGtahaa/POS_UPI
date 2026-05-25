@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Service Worker Registration ---
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=20')
+      navigator.serviceWorker.register('./sw.js?v=21')
         .then((reg) => {
           console.log('[Service Worker] Registered successfully:', reg.scope);
           
@@ -183,7 +183,8 @@ document.addEventListener('DOMContentLoaded', () => {
     '#/select-bank': document.getElementById('view-select-bank'),
     '#/qr': document.getElementById('view-qr'),
     '#/settings': document.getElementById('view-settings'),
-    '#/bill': document.getElementById('view-bill')
+    '#/bill': document.getElementById('view-bill'),
+    '#/reset-password': document.getElementById('view-reset-password')
   };
 
   const amountDisplay = document.getElementById('pos-amount-val');
@@ -282,8 +283,14 @@ document.addEventListener('DOMContentLoaded', () => {
     
     let hash = window.location.hash || '#/pos';
     
+    // Automatically intercept Supabase password recovery landing URL redirects
+    if (hash.includes('type=recovery') || hash.includes('access_token=')) {
+      hash = '#/reset-password';
+      window.location.hash = '#/reset-password';
+    }
+    
     // Automatically lock admin mode when navigating away from settings
-    if (hash !== '#/settings') {
+    if (hash !== '#/settings' && hash !== '#/reset-password') {
       isAdminModeActive = false;
     }
     
@@ -333,6 +340,8 @@ document.addEventListener('DOMContentLoaded', () => {
       initSettingsView();
     } else if (hash === '#/bill') {
       initBillView();
+    } else if (hash === '#/reset-password') {
+      initResetPasswordView();
     }
     
     // Auto-scroll to top when screen switches
@@ -2106,10 +2115,21 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
       }
 
+      const isCashTx = tx.upiId === 'cash' || tx.bankName === 'Cash Payment';
+      const displayBankName = isAdminModeActive ? tx.bankName : (isCashTx ? 'Cash' : 'Online');
+      
+      const deleteBtnHtml = isAdminModeActive ? `
+        <button class="history-item-delete" data-tx-id="${tx.id}" title="Delete this transaction" style="padding: 6px; margin-left: 4px;">
+          <svg viewBox="0 0 24 24" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
+      ` : '';
+
       item.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
           <div class="history-item-left">
-            <div class="history-item-bank">${tx.bankName}</div>
+            <div class="history-item-bank">${displayBankName}</div>
             <div class="history-item-time">${formattedTime}</div>
           </div>
           <div class="history-item-right" style="display: flex; align-items: center; gap: 8px;">
@@ -2117,11 +2137,7 @@ document.addEventListener('DOMContentLoaded', () => {
               <div class="history-item-amt">${formattedAmt}</div>
               <span class="status-badge ${badgeClass}">${badgeLabel}</span>
             </div>
-            <button class="history-item-delete" data-tx-id="${tx.id}" title="Delete this transaction" style="padding: 6px; margin-left: 4px;">
-              <svg viewBox="0 0 24 24" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </button>
+            ${deleteBtnHtml}
           </div>
         </div>
         ${detailsHtml}
@@ -2702,6 +2718,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (cardSecurity) cardSecurity.style.display = 'none';
       if (deleteActions) deleteActions.style.display = 'none';
     }
+    
+    // Dynamically refresh sales logs to update masked bank names and delete actions
+    renderSalesLogs();
   }
 
   // Bind settings toggle buttons
@@ -2741,50 +2760,149 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function handlePinInput(val) {
+    if (enteredPin.length < 4) {
+      enteredPin += val;
+      updatePinDots();
+      
+      if (enteredPin.length === 4) {
+        const correctPin = localStorage.getItem('pos_admin_pin') || '1234';
+        if (enteredPin === correctPin) {
+          isAdminModeActive = true;
+          setTimeout(() => {
+            if (adminPinModal) adminPinModal.style.display = 'none';
+            updateSettingsViewMode();
+          }, 200);
+        } else {
+          // Flash error dots
+          pinDots.forEach(dot => dot.classList.add('error'));
+          setTimeout(() => {
+            enteredPin = '';
+            resetPinDots();
+          }, 600);
+        }
+      }
+    }
+  }
+
+  function handlePinDelete() {
+    if (enteredPin.length > 0) {
+      enteredPin = enteredPin.slice(0, -1);
+      updatePinDots();
+    }
+  }
+
+  function handlePinCancel() {
+    if (adminPinModal) adminPinModal.style.display = 'none';
+    enteredPin = '';
+    updateSettingsViewMode(); // Keep staff mode visually active
+  }
+
   if (btnPinCancel) {
-    btnPinCancel.addEventListener('click', () => {
-      if (adminPinModal) adminPinModal.style.display = 'none';
-      enteredPin = '';
-      updateSettingsViewMode(); // Keep staff mode visually active
-    });
+    btnPinCancel.addEventListener('click', handlePinCancel);
   }
 
   if (btnPinClear) {
-    btnPinClear.addEventListener('click', () => {
-      if (enteredPin.length > 0) {
-        enteredPin = enteredPin.slice(0, -1);
-        updatePinDots();
-      }
-    });
+    btnPinClear.addEventListener('click', handlePinDelete);
   }
 
   pinKeys.forEach(key => {
     key.addEventListener('click', () => {
       const val = key.getAttribute('data-val');
-      if (enteredPin.length < 4) {
-        enteredPin += val;
-        updatePinDots();
+      handlePinInput(val);
+    });
+  });
+
+  // laptop physical keyboard entry mapping
+  document.addEventListener('keydown', (e) => {
+    if (adminPinModal && adminPinModal.style.display === 'flex') {
+      const key = e.key;
+      if (/^[0-9]$/.test(key)) {
+        e.preventDefault();
+        handlePinInput(key);
+      } else if (key === 'Backspace') {
+        e.preventDefault();
+        handlePinDelete();
+      } else if (key === 'Escape') {
+        e.preventDefault();
+        handlePinCancel();
+      }
+    }
+  });
+
+  const btnPinForgot = document.getElementById('btn-pin-forgot');
+  if (btnPinForgot) {
+    btnPinForgot.addEventListener('click', async (e) => {
+      e.preventDefault();
+      
+      // If user is signed in to cloud sync, recover using Supabase password verification
+      if (userSession && userSession.user) {
+        const enteredPassword = prompt('To verify your identity, please enter your Cloud Sync Account password:');
+        if (enteredPassword === null) return; // User cancelled
+        if (enteredPassword.trim() === '') {
+          alert('Password cannot be empty!');
+          return;
+        }
         
-        if (enteredPin.length === 4) {
-          const correctPin = localStorage.getItem('pos_admin_pin') || '1234';
-          if (enteredPin === correctPin) {
-            isAdminModeActive = true;
-            setTimeout(() => {
-              if (adminPinModal) adminPinModal.style.display = 'none';
-              updateSettingsViewMode();
-            }, 200);
-          } else {
-            // Flash error dots
-            pinDots.forEach(dot => dot.classList.add('error'));
-            setTimeout(() => {
-              enteredPin = '';
-              resetPinDots();
-            }, 600);
+        try {
+          if (!supabase) {
+            alert('Supabase database sync is not initialized!');
+            return;
           }
+          
+          // Re-authenticate using the entered password to verify ownership
+          const { error } = await supabase.auth.signInWithPassword({
+            email: userSession.user.email,
+            password: enteredPassword
+          });
+          
+          if (error) {
+            alert('Incorrect cloud password! PIN reset denied. ' + error.message);
+          } else {
+            const newPin = prompt('Identity verified successfully! Enter your new 4-digit Admin PIN:');
+            if (newPin === null) return;
+            if (!/^\d{4}$/.test(newPin.trim())) {
+              alert('PIN must be exactly 4 digits!');
+              return;
+            }
+            localStorage.setItem('pos_admin_pin', newPin.trim());
+            alert('Admin PIN updated successfully!');
+            
+            // Close modal and refresh settings
+            if (adminPinModal) adminPinModal.style.display = 'none';
+            enteredPin = '';
+            isAdminModeActive = true; // Auto-unlock on success!
+            updateSettingsViewMode();
+          }
+        } catch (err) {
+          console.error('[Forgot PIN] verification exception:', err);
+          alert('An unexpected error occurred during password verification.');
+        }
+      } else {
+        // Offline-only setup recovery fallback
+        const offlineConfirm = confirm(
+          "Since this device is offline-only (not synced to the cloud), we cannot verify your password.\n\n" +
+          "You can reset the Admin PIN to '1234' by doing a factory data reset.\n\n" +
+          "WARNING: This will permanently delete ALL offline transactions and local data on this device! Do you want to proceed?"
+        );
+        
+        if (offlineConfirm) {
+          localStorage.setItem('pos_banks', JSON.stringify(DEFAULT_BANKS));
+          localStorage.setItem('pos_history', JSON.stringify([]));
+          localStorage.setItem('pos_merchant', JSON.stringify(DEFAULT_MERCHANT));
+          localStorage.setItem('pos_invoice_counter', '1');
+          localStorage.setItem('pos_admin_pin', '1234');
+          
+          bankAccounts = DEFAULT_BANKS;
+          transactionHistory = [];
+          merchantProfile = DEFAULT_MERCHANT;
+          
+          alert("Device successfully reset to defaults. Admin PIN passcode is reset to '1234'.");
+          window.location.reload();
         }
       }
     });
-  });
+  }
 
   function resetPinDots() {
     pinDots.forEach(dot => {
@@ -2852,6 +2970,122 @@ document.addEventListener('DOMContentLoaded', () => {
       } finally {
         saveSecurityPasswordBtn.disabled = false;
         saveSecurityPasswordBtn.innerText = 'Update Cloud Password';
+      }
+    });
+  }
+
+  // ==========================================================================
+  // PASSWORD RECOVERY & RESET VIEW CONTROLLER (v1.8.1)
+  // ==========================================================================
+  function initResetPasswordView() {
+    const newPwd = document.getElementById('reset-new-password');
+    const confPwd = document.getElementById('reset-confirm-password');
+    if (newPwd) newPwd.value = '';
+    if (confPwd) confPwd.value = '';
+  }
+
+  // Bind Forgot Password email dispatcher inside settings sync card
+  const btnSyncForgotPassword = document.getElementById('btn-sync-forgot-password');
+  if (btnSyncForgotPassword) {
+    btnSyncForgotPassword.addEventListener('click', async (e) => {
+      e.preventDefault();
+      
+      const authEmail = document.getElementById('settings-auth-email');
+      const defaultEmail = authEmail ? authEmail.value.trim() : '';
+      const emailInput = prompt('Enter your Cloud Sync Account Email to receive a secure password recovery link:', defaultEmail);
+      
+      if (emailInput === null) return; // User cancelled
+      if (emailInput.trim() === '') {
+        alert('Email address cannot be empty!');
+        return;
+      }
+      
+      btnSyncForgotPassword.innerText = 'Sending email...';
+      btnSyncForgotPassword.style.pointerEvents = 'none';
+      
+      try {
+        if (!supabase) {
+          alert('Supabase database sync is not initialized!');
+          btnSyncForgotPassword.innerText = 'Forgot Password?';
+          btnSyncForgotPassword.style.pointerEvents = 'auto';
+          return;
+        }
+        
+        const resetRedirectUrl = window.location.origin + window.location.pathname + '#/reset-password';
+        console.log('[Supabase Auth] Reset password redirect link configured:', resetRedirectUrl);
+        
+        const { error } = await supabase.auth.resetPasswordForEmail(emailInput.trim(), {
+          redirectTo: resetRedirectUrl
+        });
+        
+        if (error) {
+          alert('Error sending recovery email: ' + error.message);
+        } else {
+          alert('Secure password recovery email sent successfully! Please check your inbox for the link.');
+        }
+      } catch (err) {
+        console.error('[Forgot Password] exception:', err);
+        alert('An unexpected error occurred during password recovery.');
+      } finally {
+        btnSyncForgotPassword.innerText = 'Forgot Password?';
+        btnSyncForgotPassword.style.pointerEvents = 'auto';
+      }
+    });
+  }
+
+  // Bind password reset form handler inside Reset Password view
+  const btnResetPassword = document.getElementById('reset-password-btn');
+  if (btnResetPassword) {
+    btnResetPassword.addEventListener('click', async () => {
+      const newPwdInput = document.getElementById('reset-new-password');
+      const confPwdInput = document.getElementById('reset-confirm-password');
+      
+      if (!newPwdInput || !confPwdInput) return;
+      
+      const newPassword = newPwdInput.value.trim();
+      const confirmPassword = confPwdInput.value.trim();
+      
+      if (newPassword.length < 6) {
+        alert('Password must be at least 6 characters long!');
+        return;
+      }
+      
+      if (newPassword !== confirmPassword) {
+        alert('Passwords do not match! Please check your input.');
+        return;
+      }
+      
+      btnResetPassword.disabled = true;
+      btnResetPassword.innerText = 'Saving password...';
+      
+      try {
+        if (!supabase) {
+          alert('Supabase database sync is not initialized!');
+          btnResetPassword.disabled = false;
+          btnResetPassword.innerText = 'Save Password & Login';
+          return;
+        }
+        
+        const { error } = await supabase.auth.updateUser({ password: newPassword });
+        
+        if (error) {
+          alert('Error updating password: ' + error.message);
+        } else {
+          alert('Cloud sync password updated successfully! Redirecting you to Settings...');
+          
+          // Clear inputs
+          newPwdInput.value = '';
+          confPwdInput.value = '';
+          
+          // Redirect user to settings screen where they are automatically signed in now
+          window.location.hash = '#/settings';
+        }
+      } catch (err) {
+        console.error('[Reset Password] exception:', err);
+        alert('An unexpected error occurred during password reset.');
+      } finally {
+        btnResetPassword.disabled = false;
+        btnResetPassword.innerText = 'Save Password & Login';
       }
     });
   }

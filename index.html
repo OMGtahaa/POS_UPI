@@ -372,6 +372,9 @@
           <div class="form-group">
             <label for="settings-auth-password">Account Password</label>
             <input type="password" id="settings-auth-password" class="input-field" placeholder="Min 6 characters">
+            <div style="text-align: right; margin-top: 4px;">
+              <a href="#" id="btn-sync-forgot-password" style="color: var(--color-emerald); font-size: 11px; font-weight: 600; text-decoration: none; transition: all 0.2s ease;">Forgot Password?</a>
+            </div>
           </div>
           
           <div style="display: flex; gap: 8px;">
@@ -550,6 +553,43 @@
       </div>
     </div>
     
+    <!-- ==========================================================================
+         SCREEN 6: RESET PASSWORD VIEW (#/reset-password)
+         ========================================================================== -->
+    <div id="view-reset-password" class="screen">
+      <div class="header">
+        <a href="#/pos" class="icon-btn" title="Back to Keypad">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+          </svg>
+        </a>
+        <h1>Reset Sync Password</h1>
+        <div style="width: 40px;"></div>
+      </div>
+
+      <div class="card settings-group" style="margin-top: 20px; padding: 25px 20px; background: rgba(30, 41, 59, 0.45); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 24px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <div style="font-size: 36px; margin-bottom: 10px; filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.3));">🔑</div>
+          <h2 style="font-size: 18px; font-weight: 700; color: #ffffff; margin-bottom: 6px;">Set New Password</h2>
+          <p style="font-size: 12px; color: var(--text-muted); line-height: 1.4; margin: 0;">Enter your new cloud synchronization account password below to recover access.</p>
+        </div>
+
+        <div class="form-group">
+          <label for="reset-new-password">New Password</label>
+          <input type="password" id="reset-new-password" class="input-field" placeholder="Min 6 characters">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 20px;">
+          <label for="reset-confirm-password">Confirm Password</label>
+          <input type="password" id="reset-confirm-password" class="input-field" placeholder="Re-enter password">
+        </div>
+
+        <button class="btn btn-emerald" id="reset-password-btn" style="width: 100%; padding: 12px; font-size: 14px; font-weight: 600;">
+          Save Password & Login
+        </button>
+      </div>
+    </div>
+    
   </div>
 
   <!-- ==========================================================================
@@ -585,6 +625,10 @@
         <button class="pin-key btn-pin-secondary" id="btn-pin-cancel">Cancel</button>
         <button class="pin-key" data-val="0">0</button>
         <button class="pin-key btn-pin-secondary" id="btn-pin-clear">⌫</button>
+      </div>
+      <!-- Forgot PIN Recovery Link -->
+      <div style="margin-top: 15px; text-align: center; width: 100%;">
+        <a href="#" id="btn-pin-forgot" style="color: #6366f1; font-size: 11px; font-weight: 600; text-decoration: none; transition: all 0.2s ease; letter-spacing: 0.5px;">Forgot Admin PIN?</a>
       </div>
     </div>
   </div>
