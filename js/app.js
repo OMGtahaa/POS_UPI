@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Service Worker Registration ---
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=22')
+      navigator.serviceWorker.register('./sw.js?v=23')
         .then((reg) => {
           console.log('[Service Worker] Registered successfully:', reg.scope);
           
@@ -2838,10 +2838,9 @@ document.addEventListener('DOMContentLoaded', () => {
       // If user is signed in to cloud sync, recover using Supabase password verification or email recovery!
       if (userSession && userSession.user) {
         const chooseEmailOption = confirm(
-          "You are currently signed in as " + userSession.user.email + ".\n\n" +
-          "Do you want to reset your Admin PIN by sending a secure recovery email to your inbox?\n\n" +
-          "• Tap OK (Yes) to send the recovery email.\n" +
-          "• Tap Cancel (No) to verify with your password instead."
+          "Forgot your Admin PIN?\n\n" +
+          "We can send a secure recovery link to your email: " + userSession.user.email + "\n\n" +
+          "Click OK to send the link, or Cancel to type your password instead."
         );
         
         if (chooseEmailOption) {
@@ -2861,7 +2860,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (error) {
               alert('Error sending recovery email: ' + error.message);
             } else {
-              alert('Secure password recovery email sent to ' + userSession.user.email + '! Please check your inbox. Clicking the link will let you set a new cloud password AND reset your Admin PIN back to 1234.');
+              alert('Recovery email sent! Please check your inbox for the link to reset your cloud password and local PIN.');
               if (adminPinModal) adminPinModal.style.display = 'none';
             }
           } catch (err) {
@@ -2914,11 +2913,11 @@ document.addEventListener('DOMContentLoaded', () => {
           alert('An unexpected error occurred during password verification.');
         }
       } else {
-        // Offline-only setup recovery fallback
         const offlineConfirm = confirm(
-          "Since this device is offline-only (not synced to the cloud), we cannot verify your password.\n\n" +
-          "You can reset the Admin PIN to '1234' by doing a factory data reset.\n\n" +
-          "WARNING: This will permanently delete ALL offline transactions and local data on this device! Do you want to proceed?"
+          "This device is running in purely offline mode.\n\n" +
+          "To reset your PIN back to '1234', we must reset local app data.\n\n" +
+          "Warning: This will delete offline sales history on this device.\n\n" +
+          "Do you want to proceed with the reset?"
         );
         
         if (offlineConfirm) {
