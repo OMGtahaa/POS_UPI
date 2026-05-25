@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Service Worker Registration ---
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=21')
+      navigator.serviceWorker.register('./sw.js?v=22')
         .then((reg) => {
           console.log('[Service Worker] Registered successfully:', reg.scope);
           
@@ -2835,8 +2835,43 @@ document.addEventListener('DOMContentLoaded', () => {
     btnPinForgot.addEventListener('click', async (e) => {
       e.preventDefault();
       
-      // If user is signed in to cloud sync, recover using Supabase password verification
+      // If user is signed in to cloud sync, recover using Supabase password verification or email recovery!
       if (userSession && userSession.user) {
+        const chooseEmailOption = confirm(
+          "You are currently signed in as " + userSession.user.email + ".\n\n" +
+          "Do you want to reset your Admin PIN by sending a secure recovery email to your inbox?\n\n" +
+          "• Tap OK (Yes) to send the recovery email.\n" +
+          "• Tap Cancel (No) to verify with your password instead."
+        );
+        
+        if (chooseEmailOption) {
+          try {
+            if (!supabase) {
+              alert('Supabase database sync is not initialized!');
+              return;
+            }
+            
+            const resetRedirectUrl = window.location.origin + window.location.pathname + '#/reset-password';
+            console.log('[Forgot PIN] Recover email redirect:', resetRedirectUrl);
+            
+            const { error } = await supabase.auth.resetPasswordForEmail(userSession.user.email, {
+              redirectTo: resetRedirectUrl
+            });
+            
+            if (error) {
+              alert('Error sending recovery email: ' + error.message);
+            } else {
+              alert('Secure password recovery email sent to ' + userSession.user.email + '! Please check your inbox. Clicking the link will let you set a new cloud password AND reset your Admin PIN back to 1234.');
+              if (adminPinModal) adminPinModal.style.display = 'none';
+            }
+          } catch (err) {
+            console.error('[Forgot PIN] Recovery email dispatch exception:', err);
+            alert('An unexpected error occurred during password recovery.');
+          }
+          return;
+        }
+        
+        // Falling back to password re-auth prompt
         const enteredPassword = prompt('To verify your identity, please enter your Cloud Sync Account password:');
         if (enteredPassword === null) return; // User cancelled
         if (enteredPassword.trim() === '') {
@@ -3071,13 +3106,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (error) {
           alert('Error updating password: ' + error.message);
         } else {
-          alert('Cloud sync password updated successfully! Redirecting you to Settings...');
+          // Reset local PIN passcode back to default '1234' on successful recovery reset
+          localStorage.setItem('pos_admin_pin', '1234');
+          
+          alert('Cloud sync password updated successfully, and your local Admin PIN has been reset to \'1234\'!\n\nRedirecting you to Settings...');
           
           // Clear inputs
           newPwdInput.value = '';
           confPwdInput.value = '';
           
-          // Redirect user to settings screen where they are automatically signed in now
+          // Redirect user to settings screen where they can unlock using '1234'
           window.location.hash = '#/settings';
         }
       } catch (err) {
