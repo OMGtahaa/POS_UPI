@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Service Worker Registration ---
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=25')
+      navigator.serviceWorker.register('./sw.js?v=27')
         .then((reg) => {
           console.log('[Service Worker] Registered successfully:', reg.scope);
           
@@ -47,6 +47,49 @@ document.addEventListener('DOMContentLoaded', () => {
       window.location.reload();
     });
   }
+
+  // --- PWA Installation & Ambient Prompt Handler ---
+  let deferredPrompt = null;
+  const pwaInstallBanner = document.getElementById('pwa-install-banner');
+  const pwaInstallBtn = document.getElementById('pwa-install-btn');
+  const pwaDismissBtn = document.getElementById('pwa-dismiss-btn');
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    if (!sessionStorage.getItem('pwa_install_dismissed') && pwaInstallBanner) {
+      pwaInstallBanner.style.display = 'flex';
+    }
+  });
+
+  if (pwaInstallBtn) {
+    pwaInstallBtn.addEventListener('click', async () => {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      console.log(`[PWA Install] User outcome: ${outcome}`);
+      deferredPrompt = null;
+      if (pwaInstallBanner) {
+        pwaInstallBanner.style.display = 'none';
+      }
+    });
+  }
+
+  if (pwaDismissBtn) {
+    pwaDismissBtn.addEventListener('click', () => {
+      sessionStorage.setItem('pwa_install_dismissed', 'true');
+      if (pwaInstallBanner) {
+        pwaInstallBanner.style.display = 'none';
+      }
+    });
+  }
+
+  window.addEventListener('appinstalled', (evt) => {
+    console.log('[PWA] POS UPI Pay Terminal was successfully installed.');
+    if (pwaInstallBanner) {
+      pwaInstallBanner.style.display = 'none';
+    }
+  });
 
   // --- State Variables ---
   let currentAmountStr = '0'; // Raw string entered on keypad
@@ -285,9 +328,7 @@ document.addEventListener('DOMContentLoaded', () => {
   
   let currentQr = null; // QRious QR code instance
 
-  // ==========================================================================
-  // HASH-BASED ROUTER
-  // ==========================================================================
+  // --- Hash-based Router ---
   function router() {
     // Dismiss mobile keyboard on any routing change
     if (document.activeElement) document.activeElement.blur();
@@ -361,9 +402,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   window.addEventListener('hashchange', router);
 
-  // ==========================================================================
-  // SYNC STATUS UI MANAGER
-  // ==========================================================================
+  // --- Sync Status UI ---
   function updateSyncStatusUI(status) {
     if (!headerSyncIndicator || !syncIndicatorText || !authStatusContainer) return;
 
@@ -422,9 +461,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ==========================================================================
-  // SUPABASE REALTIME CLOUD SYNC ENGINE WITH OFFLINE QUEUE
-  // ==========================================================================
+  // --- Supabase Cloud Sync ---
   function initSupabase() {
     if (supabase) return true; // Already initialized!
 
@@ -437,7 +474,7 @@ document.addEventListener('DOMContentLoaded', () => {
         supabase.auth.onAuthStateChange(async (event, session) => {
           userSession = session;
           if (session && session.user) {
-            console.log('[Supabase Auth] User signed in:', session.user.email);
+
             if (loggedInEmailDisplay) loggedInEmailDisplay.value = session.user.email;
             if (authFormLoggedOut) authFormLoggedOut.style.display = 'none';
             if (authFormLoggedIn) authFormLoggedIn.style.display = 'block';
@@ -524,7 +561,7 @@ document.addEventListener('DOMContentLoaded', () => {
           }));
           localStorage.setItem('pos_banks', JSON.stringify(bankAccounts));
           renderSavedBanksList();
-          renderBankSwiper();
+
         }
       } else {
         console.error('[Supabase Pull] Banks error:', banksError);
@@ -632,7 +669,7 @@ document.addEventListener('DOMContentLoaded', () => {
     bankRealtimeChannel = supabase
       .channel('public:pos_banks')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pos_banks' }, async (payload) => {
-        console.log('[Supabase Realtime] Bank change received:', payload);
+
         
         if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
           const cloudBank = payload.new;
@@ -656,14 +693,14 @@ document.addEventListener('DOMContentLoaded', () => {
         
         localStorage.setItem('pos_banks', JSON.stringify(bankAccounts));
         renderSavedBanksList();
-        renderBankSwiper();
+
       })
       .subscribe();
 
     historyRealtimeChannel = supabase
       .channel('public:pos_history')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pos_history' }, async (payload) => {
-        console.log('[Supabase Realtime] Sales log change received:', payload);
+
         
         if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
           const cloudTx = payload.new;
@@ -725,9 +762,7 @@ document.addEventListener('DOMContentLoaded', () => {
     historyRealtimeChannel = null;
   }
 
-  // ==========================================================================
-  // OFFLINE SYNC QUEUE MANAGEMENT
-  // ==========================================================================
+  // --- Offline Sync Queue ---
   function enqueueSyncTask(table, action, payload) {
     const queue = JSON.parse(localStorage.getItem('pos_sync_queue')) || [];
     const taskId = 'sq_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
@@ -812,7 +847,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const task = freshestQueue[0];
-        console.log(`[Sync Queue] Processing task: table=${task.table}, action=${task.action}, id=${task.payload.id}`);
+
         let success = false;
         
         try {
@@ -909,42 +944,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 
-
-  // ==========================================================================
-  // NAVIGATION CONTROLLER
-  // ==========================================================================
-  function switchScreen(screenKey) {
-    // Set active screens
-    Object.keys(views).forEach(key => {
-      if (key === screenKey) {
-        views[key].classList.add('active');
-      } else {
-        views[key].classList.remove('active');
-      }
-    });
-
-    // Run screen-specific render initialization
-    if (screenKey === '#/pos') {
-      // If we came back to pos, let's reset bill mode and amount if it was a bill
-      if (isBillModeActive) {
-        isBillModeActive = false;
-        currentAmountStr = '0';
-      }
-      renderBankSwiper();
-    } else if (screenKey === '#/settings') {
-      loadSettingsForms();
-    } else if (screenKey === '#/select-bank') {
-      initBankSelectorView();
-    } else if (screenKey === '#/qr') {
-      initQRView();
-    } else if (screenKey === '#/bill') {
-      initBillView();
-    }
-  }
-
-  // ==========================================================================
-  // POS SCREEN KEYPAD & DISPLAY LOGIC (DIRECT CALCULATOR STYLE)
-  // ==========================================================================
+  // --- POS Keypad & Display ---
   function updateAmountDisplay() {
     if (currentAmountStr === '') {
       currentAmountStr = '0';
@@ -1013,6 +1013,88 @@ document.addEventListener('DOMContentLoaded', () => {
     updateAmountDisplay();
   });
 
+  // Physical keyboard support for direct POS screen keypad entry
+  document.addEventListener('keydown', (e) => {
+    if (window.location.hash !== '#/pos') return;
+
+    // Guard: If any modal is active, do not handle keys here
+    const activeModals = document.querySelectorAll('.modal, .pin-modal, #admin-pin-modal, #pin-recovery-modal, #pin-offline-modal');
+    for (const m of activeModals) {
+      if (m.style.display === 'flex' || m.style.display === 'block' || m.classList.contains('active')) {
+        return;
+      }
+    }
+
+    // Avoid hijacking events when inputs or forms are focused
+    if (document.activeElement && (
+      document.activeElement.tagName === 'INPUT' || 
+      document.activeElement.tagName === 'TEXTAREA' || 
+      document.activeElement.isContentEditable
+    )) {
+      return;
+    }
+
+    const key = e.key;
+    let handled = false;
+
+    if (/^[0-9]$/.test(key)) {
+      handled = true;
+      if ('vibrate' in navigator) {
+        navigator.vibrate(15);
+      }
+      if (currentAmountStr === '0') {
+        currentAmountStr = key;
+      } else {
+        if (currentAmountStr.includes('.')) {
+          let decimalPart = currentAmountStr.split('.')[1];
+          if (decimalPart && decimalPart.length >= 2) {
+            e.preventDefault();
+            return;
+          }
+        }
+        if (currentAmountStr.replace('.', '').length < 8) {
+          currentAmountStr += key;
+        }
+      }
+    } else if (key === '.' || key === 'Decimal') {
+      handled = true;
+      if ('vibrate' in navigator) {
+        navigator.vibrate(15);
+      }
+      if (!currentAmountStr.includes('.')) {
+        currentAmountStr += '.';
+      }
+    } else if (key === 'Backspace') {
+      handled = true;
+      if ('vibrate' in navigator) {
+        navigator.vibrate(15);
+      }
+      if (currentAmountStr.length > 1) {
+        currentAmountStr = currentAmountStr.slice(0, -1);
+      } else {
+        currentAmountStr = '0';
+      }
+    } else if (key === 'Enter') {
+      handled = true;
+      const amt = parseFloat(currentAmountStr);
+      if (isNaN(amt) || amt <= 0) {
+        alert('Please enter a valid amount greater than ₹0.00');
+        return;
+      }
+      if (bankAccounts.length === 0) {
+        alert('Please configure at least one bank account in the Settings.');
+        window.location.hash = '#/settings';
+        return;
+      }
+      window.location.hash = '#/select-bank';
+    }
+
+    if (handled) {
+      e.preventDefault();
+      updateAmountDisplay();
+    }
+  });
+
   // Proceed button click
   document.getElementById('pos-proceed-btn').addEventListener('click', () => {
     const amt = parseFloat(currentAmountStr);
@@ -1030,9 +1112,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.location.hash = '#/select-bank';
   });
 
-  // ==========================================================================
-  // BANK SELECTOR SCREEN LOGIC
-  // ==========================================================================
+  // --- Bank Selector ---
   function initBankSelectorView() {
     const amt = parseFloat(currentAmountStr);
     
@@ -1083,8 +1163,8 @@ document.addEventListener('DOMContentLoaded', () => {
         row.className = `bank-option-row ${bank.color}`;
         row.innerHTML = `
           <div class="bank-option-details">
-            <div class="bank-option-name">${bank.name}</div>
-            <div class="bank-option-upi">${bank.upiId}</div>
+            <div class="bank-option-name">${escapeHTML(bank.name)}</div>
+            <div class="bank-option-upi">${escapeHTML(bank.upiId)}</div>
           </div>
           <div class="bank-option-arrow">
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1103,12 +1183,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Dummy swiper renderer function for backward compatibility
-  function renderBankSwiper() {}
 
-  // ==========================================================================
-  // NPCI UPI QR SCREEN LOGIC (P2P COMPLIANT STRING BUILDER)
-  // ==========================================================================
+
+  // --- UPI QR Screen ---
   function initQRView() {
     if (!activeSelectedBank) {
       window.location.hash = '#/select-bank';
@@ -1151,7 +1228,7 @@ document.addEventListener('DOMContentLoaded', () => {
       let payeeNameEncoded = encodeURIComponent(merchantProfile.name);
       let npciUpiUrl = `upi://pay?pa=${activeSelectedBank.upiId}&pn=${payeeNameEncoded}&am=${amount.toFixed(2)}&cu=INR`;
       
-      console.log('[POS] NPCI Compliant UPI Deep Link:', npciUpiUrl);
+
 
       // Instanciate or Update QRious
       if (currentQr === null) {
@@ -1237,9 +1314,7 @@ document.addEventListener('DOMContentLoaded', () => {
     enqueueSyncTask('pos_history', 'upsert', tx);
   }
 
-  // ==========================================================================
-  // BILL MAKER SCREEN CONTROLLER
-  // ==========================================================================
+  // --- Bill Maker ---
   
   function initBillView() {
     // Blur to hide keyboard initially on enter
@@ -1351,7 +1426,7 @@ document.addEventListener('DOMContentLoaded', () => {
       row.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
       
       row.innerHTML = `
-        <td style="padding: 8px 4px; font-weight: 500; text-align: left;">${item.name}</td>
+        <td style="padding: 8px 4px; font-weight: 500; text-align: left;">${escapeHTML(item.name)}</td>
         <td style="padding: 8px 4px; text-align: center; color: var(--text-secondary);">₹${item.price.toFixed(2)}</td>
         <td style="padding: 8px 4px; text-align: center; color: var(--text-secondary); font-weight: 600;">${item.qty}</td>
         <td style="padding: 8px 4px; text-align: right; font-weight: 700;">₹${amount.toFixed(2)}</td>
@@ -1689,9 +1764,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 'image/png');
   }
 
-  // ==========================================================================
-  // SETTINGS & LOGS VIEW LOGIC (CONSOLIDATED HUB)
-  // ==========================================================================
+  // --- Settings & Logs ---
   function loadSettingsForms() {
     // Load profile
     merchantNameInput.value = merchantProfile.name || '';
@@ -1830,8 +1903,8 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="bank-item-info">
           <div class="bank-item-color-indicator ${bank.color}"></div>
           <div class="bank-item-details">
-            <div class="bank-item-name">${bank.name}</div>
-            <div class="bank-item-upi">${bank.upiId}</div>
+            <div class="bank-item-name">${escapeHTML(bank.name)}</div>
+            <div class="bank-item-upi">${escapeHTML(bank.upiId)}</div>
           </div>
         </div>
         <div class="bank-item-actions">
@@ -1894,9 +1967,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 
-  // ==========================================================================
-  // SALES LOG REPORTING & SELECTOR FILTERS
-  // ==========================================================================
+  // --- Sales Log & Filters ---
   function renderSalesLogs() {
     historyListContainer.innerHTML = '';
     
@@ -2140,13 +2211,13 @@ document.addEventListener('DOMContentLoaded', () => {
       item.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
           <div class="history-item-left">
-            <div class="history-item-bank">${displayBankName}</div>
+            <div class="history-item-bank">${escapeHTML(displayBankName)}</div>
             <div class="history-item-time">${formattedTime}</div>
           </div>
           <div class="history-item-right" style="display: flex; align-items: center; gap: 8px;">
             <div style="text-align: right;">
               <div class="history-item-amt">${formattedAmt}</div>
-              <span class="status-badge ${badgeClass}">${badgeLabel}</span>
+              <span class="status-badge ${badgeClass}">${escapeHTML(badgeLabel)}</span>
             </div>
             ${deleteBtnHtml}
           </div>
@@ -2271,9 +2342,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ==========================================================================
-  // CLOUD DATABASE SYNC & ACCOUNT LOGIN UI HANDLERS
-  // ==========================================================================
+  // --- Cloud Sync & Login UI ---
   if (authLoginBtn) {
     authLoginBtn.addEventListener('click', async () => {
       const email = authEmailInput.value.trim();
@@ -2300,7 +2369,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (error) {
           alert('Authentication Failed: ' + error.message);
         } else {
-          console.log('[Supabase Auth] Login successful:', data);
+
           // Process sync queue immediately
           processSyncQueue();
         }
@@ -2391,9 +2460,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ==========================================================================
-  // INITIALIZE ON START
-  // ==========================================================================
+  // --- Initialization ---
   
   // 1. Instantly display correct view to prevent page-refresh POS main-page jump!
   try {
@@ -2689,9 +2756,7 @@ document.addEventListener('DOMContentLoaded', () => {
     filterSearchName.addEventListener('input', renderSalesLogs);
   }
 
-  // ==========================================================================
-  // STAFF VS ADMIN DUAL-VIEW SETTINGS CONTROLLER (v1.8.0)
-  // ==========================================================================
+  // --- Staff/Admin View Controller ---
   function updateSettingsViewMode() {
     const btnToggleStaff = document.getElementById('btn-toggle-staff');
     const btnToggleAdmin = document.getElementById('btn-toggle-admin');
@@ -3254,9 +3319,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ==========================================================================
-  // PASSWORD RECOVERY & RESET VIEW CONTROLLER (v1.8.1)
-  // ==========================================================================
+  // Password Recovery & Reset View Controller
   function initResetPasswordView() {
     const newPwd = document.getElementById('reset-new-password');
     const confPwd = document.getElementById('reset-confirm-password');

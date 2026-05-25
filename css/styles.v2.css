@@ -1,6 +1,4 @@
-/* ==========================================================================
-   POS UPI PAY TERMINAL - SIMPLIFIED DESIGN SYSTEM
-   ========================================================================== */
+/* --- POS UPI Pay Terminal --- */
 
 /* --- Google Fonts --- */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
@@ -109,9 +107,7 @@ html {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* ==========================================================================
-   HEADERS & TOOLBAR
-   ========================================================================== */
+/* --- Headers & Toolbar --- */
 .header {
   display: flex;
   justify-content: space-between;
@@ -155,9 +151,7 @@ html {
   fill: none;
 }
 
-/* ==========================================================================
-   COMPONENTS - CARDS & BUTTONS
-   ========================================================================== */
+/* --- Cards & Buttons --- */
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border-glass);
@@ -208,9 +202,7 @@ html {
   background: rgba(255, 255, 255, 0.1);
 }
 
-/* ==========================================================================
-   SCREEN 1: POS TERMINAL
-   ========================================================================== */
+/* --- POS Terminal --- */
 .pos-screen {
   justify-content: space-between;
 }
@@ -306,9 +298,7 @@ html {
   padding: 0 4px;
 }
 
-/* ==========================================================================
-   SCREEN 2: SELECT BANK (FULL VERTICAL EASY TOUCH LIST)
-   ========================================================================== */
+/* --- Bank Selector --- */
 .amount-summary-banner {
   background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%);
   border: 1px solid var(--border-glass);
@@ -431,9 +421,7 @@ html {
   font-size: 14px;
 }
 
-/* ==========================================================================
-   SCREEN 3: UPI QR DISPLAY
-   ========================================================================== */
+/* --- QR Display --- */
 .qr-display-container-card {
   flex: 1;
   display: flex;
@@ -523,9 +511,7 @@ html {
   100% { transform: scale(0.9); opacity: 0.6; box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
 }
 
-/* ==========================================================================
-   SCREEN 4: SETTINGS & SALES LOG HUB
-   ========================================================================== */
+/* --- Settings & Sales Log --- */
 .settings-screen {
   overflow-y: auto;
   padding-bottom: 24px;
@@ -1012,9 +998,7 @@ html {
   font-size: 12px;
 }
 
-/* ==========================================================================
-   BILL MAKER SCREEN STYLES (#/bill)
-   ========================================================================== */
+/* --- Bill Maker --- */
 .bill-screen {
   overflow-y: auto !important;
 }
@@ -1122,18 +1106,14 @@ html {
   fill: none;
 }
 
-/* ==========================================================================
-   STAFF VS ADMIN SEGMENTS TOGGLE
-   ========================================================================== */
+/* --- Staff/Admin Toggle --- */
 .settings-toggle-pill .toggle-btn.active {
   background: var(--color-emerald) !important;
   color: #ffffff !important;
   box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
 }
 
-/* ==========================================================================
-   ADMIN SECURE PIN LOCK OVERLAY MODAL STYLES
-   ========================================================================== */
+/* --- Admin PIN Lock Modal --- */
 .pin-modal-backdrop {
   position: fixed;
   top: 0;
@@ -1289,6 +1269,105 @@ html {
   25% { transform: translateX(-6px); }
   75% { transform: translateX(6px); }
   100% { transform: translateX(0); }
+}
+
+/* --- PWA Install Banner --- */
+.pwa-install-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(12, 17, 34, 0.95);
+  border-bottom: 1px solid rgba(16, 185, 129, 0.2);
+  padding: 12px 16px;
+  gap: 12px;
+  z-index: 1000;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  animation: slideDown 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.pwa-install-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pwa-install-icon {
+  width: 36px;
+  height: 36px;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-emerald);
+}
+
+.pwa-install-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.pwa-install-title {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.pwa-install-subtitle {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.pwa-install-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.pwa-btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition-fast);
+  border: none;
+  font-family: var(--font-sans);
+}
+
+.pwa-btn-primary {
+  background: var(--color-emerald);
+  color: #070a13;
+}
+
+.pwa-btn-primary:hover {
+  background: #059669;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+}
+
+.pwa-btn-secondary {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pwa-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
 }
 
 

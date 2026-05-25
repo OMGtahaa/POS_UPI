@@ -2,28 +2,28 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <!-- PWA Responsive Viewport -->
+
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   
   <title>POS UPI Pay Terminal</title>
   
-  <!-- PWA Theme Color and Capability Meta -->
+
   <meta name="theme-color" content="#0a0f1d">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="UPI POS">
   
-  <!-- Favicon / SVG Logo -->
+
   <link rel="icon" type="image/svg+xml" href="./icon.svg">
   <link rel="apple-touch-icon" href="./icon.svg">
   
-  <!-- Web Manifest for PWA Setup -->
+
   <link rel="manifest" href="./manifest.json">
   
-  <!-- CSS Stylesheet -->
+
   <link rel="stylesheet" href="./css/styles.v2.css">
   
-  <!-- Core Libraries & Scripts (Loaded at start) -->
+
   <script defer src="./lib/qrious.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="./js/app.js"></script>
@@ -34,9 +34,26 @@
     <!-- Top loading bar for sync/reload feedback -->
     <div id="loading-bar" class="loading-bar"></div>
     
-    <!-- ==========================================================================
-         SCREEN 1: POS TERMINAL (#/pos)
-         ========================================================================== -->
+    <!-- PWA Install Banner -->
+    <div id="pwa-install-banner" class="pwa-install-banner" style="display: none;">
+      <div class="pwa-install-content">
+        <div class="pwa-install-icon">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+        </div>
+        <div class="pwa-install-text">
+          <div class="pwa-install-title">Install POS WebApp</div>
+          <div class="pwa-install-subtitle">Access offline instantly</div>
+        </div>
+      </div>
+      <div class="pwa-install-actions">
+        <button id="pwa-install-btn" class="pwa-btn pwa-btn-primary">Install</button>
+        <button id="pwa-dismiss-btn" class="pwa-btn pwa-btn-secondary">Later</button>
+      </div>
+    </div>
+    
+    <!-- POS Terminal (#/pos) -->
     <div id="view-pos" class="screen pos-screen active">
       <div class="header">
         <div style="display: flex; align-items: center; gap: 8px;">
@@ -47,20 +64,20 @@
           </a>
         </div>
         <div class="header-actions">
-          <!-- Refresh button for cache-busting hard reload -->
+
           <button class="icon-btn" id="header-refresh-btn" title="Refresh & Sync">
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h5M20 20v-5h-5" />
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.49 9A9 9 0 005.64 5.64L4 4m16 16l-1.64-1.64A9 9 0 014.51 15" />
             </svg>
           </button>
-          <!-- Bill Maker button -->
+
           <a href="#/bill" class="icon-btn" id="header-bill-btn" title="Create Bill">
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
           </a>
-          <!-- Settings gear button -->
+
           <a href="#/settings" class="icon-btn" id="header-settings-btn" title="Settings & Logs">
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -70,7 +87,7 @@
         </div>
       </div>
       
-      <!-- Interactive Calculator Amount display -->
+
       <div class="amount-display-container">
         <span class="amount-label">Enter Amount</span>
         <div class="amount-val-wrapper">
@@ -79,7 +96,7 @@
         </div>
       </div>
       
-      <!-- Virtual Keypad (Direct Entry + Period button) -->
+
       <div class="keypad-container" id="pos-keypad">
         <div class="keypad-btn" data-val="1">1</div>
         <div class="keypad-btn" data-val="2">2</div>
@@ -90,7 +107,7 @@
         <div class="keypad-btn" data-val="7">7</div>
         <div class="keypad-btn" data-val="8">8</div>
         <div class="keypad-btn" data-val="9">9</div>
-        <!-- Period '.' button instead of 'C' -->
+
         <div class="keypad-btn action-btn" data-val="decimal" id="keypad-decimal" title="Decimal Point">.</div>
         <div class="keypad-btn" data-val="0">0</div>
         <div class="keypad-btn action-btn" data-val="backspace" id="keypad-backspace" title="Backspace">
@@ -111,9 +128,7 @@
       </div>
     </div>
 
-    <!-- ==========================================================================
-         SCREEN 2: BANK SELECTOR (#/select-bank)
-         ========================================================================== -->
+    <!-- Bank Selector (#/select-bank) -->
     <div id="view-select-bank" class="screen">
       <div class="header">
         <a href="#/pos" class="icon-btn" title="Back to Keypad">
@@ -133,14 +148,12 @@
       <div class="bank-list-scroll-wrapper">
         <span class="settings-label">All Configured Options</span>
         <div class="vertical-bank-list" id="select-bank-list-container">
-          <!-- Dynamic High Contrast Banks List populated by JS -->
+
         </div>
       </div>
     </div>
 
-    <!-- ==========================================================================
-         SCREEN 3: UPI QR DISPLAY (#/qr)
-         ========================================================================== -->
+    <!-- QR Display (#/qr) -->
     <div id="view-qr" class="screen">
       <div class="header">
         <a href="#/select-bank" class="icon-btn" id="qr-back-btn" title="Back to Banks">
@@ -153,12 +166,12 @@
       </div>
 
       <div class="qr-display-container-card card">
-        <!-- High Contrast QR Container -->
+
         <div class="qr-container-outer" id="qr-canvas-wrapper">
           <canvas id="qr-canvas" class="qr-canvas"></canvas>
         </div>
         
-        <!-- High Contrast Cash Display (Hidden by default) -->
+
         <div id="qr-cash-display" style="display: none; flex-direction: column; align-items: center; justify-content: center; padding: 25px 20px; background: rgba(16, 185, 129, 0.05); border: 2px dashed var(--color-emerald); border-radius: 12px; margin: 15px 0; text-align: center; width: 100%;">
           <div style="font-size: 40px; margin-bottom: 12px; filter: drop-shadow(0 2px 8px rgba(16,185,129,0.3));">💵</div>
           <div style="color: #ffffff; font-size: 18px; font-weight: 700; margin-bottom: 6px; letter-spacing: 0.5px;">CASH TRANSACTION</div>
@@ -179,7 +192,7 @@
           <span>Customer can scan and pay now</span>
         </div>
 
-        <!-- Confirm Trigger. Telegram links are completely removed -->
+
         <button class="btn btn-emerald" id="qr-confirm-paid-btn" style="margin-top: 10px;">
           Confirm Payment Received
         </button>
@@ -192,9 +205,7 @@
       </div>
     </div>
 
-    <!-- ==========================================================================
-         SCREEN 4: SETTINGS & LOGS (#/settings)
-         ========================================================================== -->
+    <!-- Settings & Logs (#/settings) -->
     <div id="view-settings" class="screen settings-screen">
       <div class="header">
         <a href="#/pos" class="icon-btn" title="Back to Keypad">
@@ -206,7 +217,7 @@
         <div style="width: 40px;"></div>
       </div>
 
-      <!-- Segment Toggle Pill for Staff vs Admin View -->
+
       <div class="settings-toggle-container" style="display: flex; flex-direction: column; align-items: center; padding: 12px 16px; background: rgba(0,0,0,0.1); border-bottom: 1px solid rgba(255,255,255,0.03); margin-bottom: 15px; gap: 8px;">
         <div class="settings-toggle-pill" style="display: flex; background: rgba(255,255,255,0.03); padding: 3px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05); width: 100%; max-width: 320px;">
           <button id="btn-toggle-staff" class="toggle-btn active" style="flex: 1; padding: 8px 12px; font-size: 12px; font-weight: 600; border-radius: 18px; border: none; background: transparent; color: var(--text-secondary); cursor: pointer; transition: all 0.2s ease;">Staff Mode</button>
@@ -422,7 +433,7 @@
         <span class="settings-label">ℹ️ About the Creator</span>
         <div style="margin-top: 12px; font-size: 13px; color: var(--text-secondary); line-height: 1.6; text-align: center;">
           <div style="font-weight: 700; color: var(--text-primary); font-size: 15px; margin-bottom: 2px;">POS UPI Terminal</div>
-          <div style="color: var(--color-emerald); font-weight: 600; font-size: 11px; margin-bottom: 12px; letter-spacing: 0.5px;">Version 1.8.5</div>
+          <div style="color: var(--color-emerald); font-weight: 600; font-size: 11px; margin-bottom: 12px; letter-spacing: 0.5px;">Version 1.8.7</div>
           <p style="margin-bottom: 4px;">This application was conceptualized and created by</p>
           <div style="font-weight: 700; color: #ffffff; font-size: 18px; margin-top: 6px; margin-bottom: 8px; letter-spacing: 0.5px; background: linear-gradient(135deg, #3b82f6 0%, #10b981 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; display: inline-block;">Tahaa Sabir</div>
           <p style="font-size: 11px; color: var(--text-muted);">Designed for secure, reliable, and instant merchant offline transactions.</p>
@@ -430,9 +441,7 @@
       </div>
     </div>
 
-    <!-- ==========================================================================
-         SCREEN 5: BILL MAKER (#/bill)
-         ========================================================================== -->
+    <!-- Bill Maker (#/bill) -->
     <div id="view-bill" class="screen bill-screen">
       <div class="header">
         <a href="#/pos" class="icon-btn" id="bill-back-btn" title="Back to Keypad">
@@ -553,9 +562,7 @@
       </div>
     </div>
     
-    <!-- ==========================================================================
-         SCREEN 6: RESET PASSWORD VIEW (#/reset-password)
-         ========================================================================== -->
+    <!-- Reset Password (#/reset-password) -->
     <div id="view-reset-password" class="screen">
       <div class="header">
         <a href="#/pos" class="icon-btn" title="Back to Keypad">
@@ -592,9 +599,7 @@
     
   </div>
 
-  <!-- ==========================================================================
-       ADMIN SECURE PIN LOCK OVERLAY MODAL
-       ========================================================================== -->
+  <!-- Admin PIN Lock Modal -->
   <div id="admin-pin-modal" class="pin-modal-backdrop" style="display: none;">
     <div class="pin-modal-container">
       <div class="pin-modal-header">
@@ -603,7 +608,7 @@
         <p class="pin-modal-subtitle">Access restricted to authorized personnel only.</p>
       </div>
       
-      <!-- Dots Slots Display -->
+
       <div class="pin-dots-container">
         <div class="pin-dot"></div>
         <div class="pin-dot"></div>
@@ -611,7 +616,7 @@
         <div class="pin-dot"></div>
       </div>
       
-      <!-- Custom Secure Pinpad Keypad -->
+
       <div class="pin-keypad-container">
         <button class="pin-key" data-val="1">1</button>
         <button class="pin-key" data-val="2">2</button>
@@ -626,16 +631,14 @@
         <button class="pin-key" data-val="0">0</button>
         <button class="pin-key btn-pin-secondary" id="btn-pin-clear">⌫</button>
       </div>
-      <!-- Forgot PIN Recovery Link -->
+
       <div style="margin-top: 15px; text-align: center; width: 100%;">
         <a href="#" id="btn-pin-forgot" style="color: #6366f1; font-size: 11px; font-weight: 600; text-decoration: none; transition: all 0.2s ease; letter-spacing: 0.5px;">Forgot Admin PIN?</a>
       </div>
     </div>
   </div>
 
-  <!-- ==========================================================================
-       ADMIN PIN CLOUD SYNC RECOVERY MODAL
-       ========================================================================== -->
+  <!-- PIN Recovery Modal -->
   <div id="pin-recovery-modal" class="pin-modal-backdrop" style="display: none;">
     <div class="pin-modal-container">
       <div class="pin-modal-header">
@@ -676,9 +679,7 @@
     </div>
   </div>
 
-  <!-- ==========================================================================
-       ADMIN PIN OFFLINE WIPE/RESET MODAL
-       ========================================================================== -->
+  <!-- Offline Reset Modal -->
   <div id="pin-offline-modal" class="pin-modal-backdrop" style="display: none;">
     <div class="pin-modal-container" style="max-width: 360px;">
       <div class="pin-modal-header">
