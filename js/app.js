@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Service Worker Registration ---
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=23')
+      navigator.serviceWorker.register('./sw.js?v=24')
         .then((reg) => {
           console.log('[Service Worker] Registered successfully:', reg.scope);
           
@@ -2830,111 +2830,197 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // Recovery Custom Modals
+  const pinRecoveryModal = document.getElementById('pin-recovery-modal');
+  const pinOfflineModal = document.getElementById('pin-offline-modal');
+
+  // Synced recovery step elements
+  const recoveryStepVerify = document.getElementById('recovery-step-verify');
+  const recoveryStepNewPin = document.getElementById('recovery-step-newpin');
+  const recoveryPasswordInput = document.getElementById('recovery-password-input');
+  const recoveryForgotLink = document.getElementById('recovery-forgot-password-link');
+  const recoveryCancelBtn = document.getElementById('recovery-cancel-btn');
+  const recoveryVerifyBtn = document.getElementById('recovery-verify-btn');
+  const recoveryNewPinInput = document.getElementById('recovery-newpin-input');
+  const recoveryNewPinCancelBtn = document.getElementById('recovery-newpin-cancel-btn');
+  const recoveryNewPinSaveBtn = document.getElementById('recovery-newpin-save-btn');
+  const recoveryModalSubtitle = document.getElementById('recovery-modal-subtitle');
+
+  // Offline recovery elements
+  const offlineCancelBtn = document.getElementById('offline-cancel-btn');
+  const offlineResetBtn = document.getElementById('offline-reset-btn');
+
   const btnPinForgot = document.getElementById('btn-pin-forgot');
   if (btnPinForgot) {
-    btnPinForgot.addEventListener('click', async (e) => {
+    btnPinForgot.addEventListener('click', (e) => {
       e.preventDefault();
       
       // If user is signed in to cloud sync, recover using Supabase password verification or email recovery!
       if (userSession && userSession.user) {
-        const chooseEmailOption = confirm(
-          "Forgot your Admin PIN?\n\n" +
-          "We can send a secure recovery link to your email: " + userSession.user.email + "\n\n" +
-          "Click OK to send the link, or Cancel to type your password instead."
-        );
+        if (adminPinModal) adminPinModal.style.display = 'none';
         
-        if (chooseEmailOption) {
-          try {
-            if (!supabase) {
-              alert('Supabase database sync is not initialized!');
-              return;
-            }
-            
-            const resetRedirectUrl = window.location.origin + window.location.pathname + '#/reset-password';
-            console.log('[Forgot PIN] Recover email redirect:', resetRedirectUrl);
-            
-            const { error } = await supabase.auth.resetPasswordForEmail(userSession.user.email, {
-              redirectTo: resetRedirectUrl
-            });
-            
-            if (error) {
-              alert('Error sending recovery email: ' + error.message);
-            } else {
-              alert('Recovery email sent! Please check your inbox for the link to reset your cloud password and local PIN.');
-              if (adminPinModal) adminPinModal.style.display = 'none';
-            }
-          } catch (err) {
-            console.error('[Forgot PIN] Recovery email dispatch exception:', err);
-            alert('An unexpected error occurred during password recovery.');
-          }
-          return;
-        }
+        // Reset states to Step 1
+        if (recoveryPasswordInput) recoveryPasswordInput.value = '';
+        if (recoveryNewPinInput) recoveryNewPinInput.value = '';
+        if (recoveryStepVerify) recoveryStepVerify.style.display = 'flex';
+        if (recoveryStepNewPin) recoveryStepNewPin.style.display = 'none';
+        if (recoveryModalSubtitle) recoveryModalSubtitle.textContent = 'Verify your identity to choose a new PIN.';
         
-        // Falling back to password re-auth prompt
-        const enteredPassword = prompt('To verify your identity, please enter your Cloud Sync Account password:');
-        if (enteredPassword === null) return; // User cancelled
-        if (enteredPassword.trim() === '') {
-          alert('Password cannot be empty!');
-          return;
-        }
-        
-        try {
-          if (!supabase) {
-            alert('Supabase database sync is not initialized!');
-            return;
-          }
-          
-          // Re-authenticate using the entered password to verify ownership
-          const { error } = await supabase.auth.signInWithPassword({
-            email: userSession.user.email,
-            password: enteredPassword
-          });
-          
-          if (error) {
-            alert('Incorrect cloud password! PIN reset denied. ' + error.message);
-          } else {
-            const newPin = prompt('Identity verified successfully! Enter your new 4-digit Admin PIN:');
-            if (newPin === null) return;
-            if (!/^\d{4}$/.test(newPin.trim())) {
-              alert('PIN must be exactly 4 digits!');
-              return;
-            }
-            localStorage.setItem('pos_admin_pin', newPin.trim());
-            alert('Admin PIN updated successfully!');
-            
-            // Close modal and refresh settings
-            if (adminPinModal) adminPinModal.style.display = 'none';
-            enteredPin = '';
-            isAdminModeActive = true; // Auto-unlock on success!
-            updateSettingsViewMode();
-          }
-        } catch (err) {
-          console.error('[Forgot PIN] verification exception:', err);
-          alert('An unexpected error occurred during password verification.');
+        if (pinRecoveryModal) {
+          pinRecoveryModal.style.display = 'flex';
+          if (recoveryPasswordInput) recoveryPasswordInput.focus();
         }
       } else {
-        const offlineConfirm = confirm(
-          "This device is running in purely offline mode.\n\n" +
-          "To reset your PIN back to '1234', we must reset local app data.\n\n" +
-          "Warning: This will delete offline sales history on this device.\n\n" +
-          "Do you want to proceed with the reset?"
-        );
+        if (adminPinModal) adminPinModal.style.display = 'none';
+        if (pinOfflineModal) pinOfflineModal.style.display = 'flex';
+      }
+    });
+  }
+
+  // --- Synced Recovery Modal Event Handlers ---
+  if (recoveryCancelBtn) {
+    recoveryCancelBtn.addEventListener('click', () => {
+      if (pinRecoveryModal) pinRecoveryModal.style.display = 'none';
+      if (adminPinModal) adminPinModal.style.display = 'flex';
+    });
+  }
+
+  if (recoveryNewPinCancelBtn) {
+    recoveryNewPinCancelBtn.addEventListener('click', () => {
+      if (pinRecoveryModal) pinRecoveryModal.style.display = 'none';
+      if (adminPinModal) adminPinModal.style.display = 'flex';
+    });
+  }
+
+  if (recoveryForgotLink) {
+    recoveryForgotLink.addEventListener('click', async (e) => {
+      e.preventDefault();
+      try {
+        if (!supabase) {
+          alert('Supabase database sync is not initialized!');
+          return;
+        }
         
-        if (offlineConfirm) {
-          localStorage.setItem('pos_banks', JSON.stringify(DEFAULT_BANKS));
-          localStorage.setItem('pos_history', JSON.stringify([]));
-          localStorage.setItem('pos_merchant', JSON.stringify(DEFAULT_MERCHANT));
-          localStorage.setItem('pos_invoice_counter', '1');
-          localStorage.setItem('pos_admin_pin', '1234');
-          
-          bankAccounts = DEFAULT_BANKS;
-          transactionHistory = [];
-          merchantProfile = DEFAULT_MERCHANT;
-          
-          alert("Device successfully reset to defaults. Admin PIN passcode is reset to '1234'.");
-          window.location.reload();
+        const resetRedirectUrl = window.location.origin + window.location.pathname + '#/reset-password';
+        console.log('[Forgot PIN] Recover email redirect:', resetRedirectUrl);
+        
+        const { error } = await supabase.auth.resetPasswordForEmail(userSession.user.email, {
+          redirectTo: resetRedirectUrl
+        });
+        
+        if (error) {
+          alert('Error sending recovery email: ' + error.message);
+        } else {
+          alert('Recovery email sent! Please check your inbox for the link to reset your cloud password and local PIN.');
+          if (pinRecoveryModal) pinRecoveryModal.style.display = 'none';
+        }
+      } catch (err) {
+        console.error('[Forgot PIN] Recovery email dispatch exception:', err);
+        alert('An unexpected error occurred during password recovery.');
+      }
+    });
+  }
+
+  const handleCloudVerify = async () => {
+    const password = recoveryPasswordInput ? recoveryPasswordInput.value.trim() : '';
+    if (!password) {
+      alert('Password cannot be empty!');
+      return;
+    }
+
+    try {
+      if (!supabase) {
+        alert('Supabase database sync is not initialized!');
+        return;
+      }
+      
+      const { error } = await supabase.auth.signInWithPassword({
+        email: userSession.user.email,
+        password: password
+      });
+      
+      if (error) {
+        alert('Incorrect cloud password! PIN reset denied. ' + error.message);
+      } else {
+        // Transition to Step 2: Choose PIN
+        if (recoveryStepVerify) recoveryStepVerify.style.display = 'none';
+        if (recoveryStepNewPin) recoveryStepNewPin.style.display = 'flex';
+        if (recoveryModalSubtitle) recoveryModalSubtitle.textContent = 'Enter a new 4-digit Admin PIN';
+        if (recoveryNewPinInput) {
+          recoveryNewPinInput.value = '';
+          recoveryNewPinInput.focus();
         }
       }
+    } catch (err) {
+      console.error('[Forgot PIN] verification exception:', err);
+      alert('An unexpected error occurred during password verification.');
+    }
+  };
+
+  if (recoveryVerifyBtn) {
+    recoveryVerifyBtn.addEventListener('click', handleCloudVerify);
+  }
+
+  if (recoveryPasswordInput) {
+    recoveryPasswordInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleCloudVerify();
+      }
+    });
+  }
+
+  const handleSaveNewPin = () => {
+    const newPin = recoveryNewPinInput ? recoveryNewPinInput.value.trim() : '';
+    if (!/^\d{4}$/.test(newPin)) {
+      alert('PIN must be exactly 4 digits!');
+      return;
+    }
+
+    localStorage.setItem('pos_admin_pin', newPin);
+    alert('Admin PIN updated successfully!');
+    
+    if (pinRecoveryModal) pinRecoveryModal.style.display = 'none';
+    enteredPin = '';
+    isAdminModeActive = true; // Auto-unlock on success!
+    updateSettingsViewMode();
+  };
+
+  if (recoveryNewPinSaveBtn) {
+    recoveryNewPinSaveBtn.addEventListener('click', handleSaveNewPin);
+  }
+
+  if (recoveryNewPinInput) {
+    recoveryNewPinInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleSaveNewPin();
+      }
+    });
+  }
+
+  // --- Offline Recovery Modal Event Handlers ---
+  if (offlineCancelBtn) {
+    offlineCancelBtn.addEventListener('click', () => {
+      if (pinOfflineModal) pinOfflineModal.style.display = 'none';
+      if (adminPinModal) adminPinModal.style.display = 'flex';
+    });
+  }
+
+  if (offlineResetBtn) {
+    offlineResetBtn.addEventListener('click', () => {
+      localStorage.setItem('pos_banks', JSON.stringify(DEFAULT_BANKS));
+      localStorage.setItem('pos_history', JSON.stringify([]));
+      localStorage.setItem('pos_merchant', JSON.stringify(DEFAULT_MERCHANT));
+      localStorage.setItem('pos_invoice_counter', '1');
+      localStorage.setItem('pos_admin_pin', '1234');
+      
+      bankAccounts = DEFAULT_BANKS;
+      transactionHistory = [];
+      merchantProfile = DEFAULT_MERCHANT;
+      
+      alert("Device successfully reset to defaults. Admin PIN passcode is reset to '1234'.");
+      window.location.reload();
     });
   }
 
