@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Service Worker Registration ---
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=29')
+      navigator.serviceWorker.register('./sw.js?v=30')
         .then((reg) => {
           console.log('[Service Worker] Registered successfully:', reg.scope);
           
@@ -2546,6 +2546,24 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // --- Bill Maker Keyboard & Form Submit Binding ---
+  if (billCustNameInput && billCustPhoneInput) {
+    billCustNameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        billCustPhoneInput.focus();
+      }
+    });
+  }
+
+  if (billCustPhoneInput && billItemNameInput) {
+    billCustPhoneInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        billItemNameInput.focus();
+      }
+    });
+  }
+
   if (billItemNameInput && billItemPriceInput && billItemQtyInput) {
     billItemNameInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
@@ -2565,6 +2583,16 @@ document.addEventListener('DOMContentLoaded', () => {
       if (e.key === 'Enter') {
         e.preventDefault();
         addBillItem();
+      }
+    });
+  }
+
+  if (billDiscountInput && billProceedBtn) {
+    billDiscountInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        billProceedBtn.focus();
+        billProceedBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     });
   }
