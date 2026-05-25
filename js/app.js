@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Service Worker Registration ---
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=30')
+      navigator.serviceWorker.register('./sw.js?v=31')
         .then((reg) => {
           console.log('[Service Worker] Registered successfully:', reg.scope);
           
@@ -2453,7 +2453,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (error) {
           alert('Registration Failed: ' + error.message);
         } else {
-          alert('Registration Successful! If email confirmation is enabled on your Supabase project, check your inbox. Otherwise, you can sign in directly now.');
+          alert('Registration Successful! Please check your email inbox to confirm your account before signing in.');
         }
       } catch(e) {
         alert('Error registering: ' + e.message);
