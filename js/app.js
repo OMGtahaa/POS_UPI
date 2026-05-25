@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Service Worker Registration ---
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=31')
+      navigator.serviceWorker.register('./sw.js?v=32')
         .then((reg) => {
           console.log('[Service Worker] Registered successfully:', reg.scope);
           
@@ -2548,7 +2548,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Bill Maker Keyboard & Form Submit Binding ---
   if (billCustNameInput && billCustPhoneInput) {
     billCustNameInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' || e.keyCode === 13) {
         e.preventDefault();
         billCustPhoneInput.focus();
       }
@@ -2557,7 +2557,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (billCustPhoneInput && billItemNameInput) {
     billCustPhoneInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' || e.keyCode === 13) {
         e.preventDefault();
         billItemNameInput.focus();
       }
@@ -2566,21 +2566,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (billItemNameInput && billItemPriceInput && billItemQtyInput) {
     billItemNameInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' || e.keyCode === 13) {
         e.preventDefault();
         billItemPriceInput.focus();
       }
     });
     
     billItemPriceInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' || e.keyCode === 13) {
         e.preventDefault();
         billItemQtyInput.focus();
       }
     });
     
     billItemQtyInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' || e.keyCode === 13) {
         e.preventDefault();
         addBillItem();
       }
@@ -2589,7 +2589,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (billDiscountInput && billProceedBtn) {
     billDiscountInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' || e.keyCode === 13) {
         e.preventDefault();
         billProceedBtn.focus();
         billProceedBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
