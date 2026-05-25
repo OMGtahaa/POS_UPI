@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Service Worker Registration ---
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=27')
+      navigator.serviceWorker.register('./sw.js?v=28')
         .then((reg) => {
           console.log('[Service Worker] Registered successfully:', reg.scope);
           
@@ -822,6 +822,25 @@ document.addEventListener('DOMContentLoaded', () => {
     return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
   }
 
+  function isPersistentError(error) {
+    if (!error) return false;
+    
+    // HTTP Status codes 400-499 indicate permission/validation/request failures that will not resolve on retry
+    if (error.status && error.status >= 400 && error.status < 500) {
+      return true;
+    }
+    
+    // Postgres/PostgREST error codes (42501 RLS, 23xxx constraints, 22xxx data exceptions, Pxxxx syntax)
+    if (error.code) {
+      const codeStr = String(error.code);
+      if (codeStr === '42501' || codeStr.startsWith('22') || codeStr.startsWith('23') || codeStr.startsWith('P0')) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
   let isProcessingQueue = false;
   async function processSyncQueue() {
     if (isProcessingQueue) return;
@@ -849,6 +868,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const task = freshestQueue[0];
 
         let success = false;
+        let discardTask = false;
         
         try {
           if (task.table === 'pos_banks') {
@@ -857,8 +877,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 .from('pos_banks')
                 .delete()
                 .eq('id', task.payload.id), 6000);
-              if (!error) success = true;
-              else console.error('[Sync Queue] Bank delete error:', error);
+              if (!error) {
+                success = true;
+              } else {
+                console.error('[Sync Queue] Bank delete error:', error);
+                if (isPersistentError(error)) discardTask = true;
+              }
             } else {
               const { error } = await withTimeout(supabase
                 .from('pos_banks')
@@ -870,8 +894,12 @@ document.addEventListener('DOMContentLoaded', () => {
                   color: task.payload.color,
                   user_id: userSession.user.id
                 }), 6000);
-              if (!error) success = true;
-              else console.error('[Sync Queue] Bank upsert error:', error);
+              if (!error) {
+                success = true;
+              } else {
+                console.error('[Sync Queue] Bank upsert error:', error);
+                if (isPersistentError(error)) discardTask = true;
+              }
             }
           } else if (task.table === 'pos_history') {
             if (task.action === 'delete') {
@@ -879,8 +907,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 .from('pos_history')
                 .delete()
                 .eq('id', task.payload.id), 6000);
-              if (!error) success = true;
-              else console.error('[Sync Queue] Transaction delete error:', error);
+              if (!error) {
+                success = true;
+              } else {
+                console.error('[Sync Queue] Transaction delete error:', error);
+                if (isPersistentError(error)) discardTask = true;
+              }
             } else {
               const { error } = await withTimeout(supabase
                 .from('pos_history')
@@ -894,12 +926,19 @@ document.addEventListener('DOMContentLoaded', () => {
                   timestamp: task.payload.timestamp,
                   user_id: userSession.user.id
                 }), 6000);
-              if (!error) success = true;
-              else console.error('[Sync Queue] Transaction upsert error:', error);
+              if (!error) {
+                success = true;
+              } else {
+                console.error('[Sync Queue] Transaction upsert error:', error);
+                if (isPersistentError(error)) discardTask = true;
+              }
             }
           }
 
-          if (success) {
+          if (success || discardTask) {
+            if (discardTask) {
+              console.warn('[Sync Queue] Discarding failing task to prevent blocking sync queue:', task);
+            }
             // Read, shift, and save back the freshest queue to prevent losing items enqueued during the await
             const finalQueue = JSON.parse(localStorage.getItem('pos_sync_queue')) || [];
             if (finalQueue.length > 0 && finalQueue[0].id === task.id) {
@@ -907,7 +946,7 @@ document.addEventListener('DOMContentLoaded', () => {
               localStorage.setItem('pos_sync_queue', JSON.stringify(finalQueue));
             }
           } else {
-            console.warn('[Sync Queue] Task failed to write, pausing queue retry.');
+            console.warn('[Sync Queue] Task failed to write (transient error), pausing queue retry.');
             break;
           }
         } catch (e) {
@@ -2208,10 +2247,17 @@ document.addEventListener('DOMContentLoaded', () => {
         </button>
       ` : '';
 
+      const custTag = (isBill && billData && billData.custName) ? 
+        ` <span class="history-item-cust-tag" style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: rgba(99, 102, 241, 0.15); color: #818cf8; margin-left: 6px; font-weight: 500; display: inline-flex; align-items: center; vertical-align: middle; gap: 2px;">👤 ${escapeHTML(billData.custName)}</span>` : 
+        '';
+
       item.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
           <div class="history-item-left">
-            <div class="history-item-bank">${escapeHTML(displayBankName)}</div>
+            <div class="history-item-bank" style="display: flex; align-items: center; flex-wrap: wrap; gap: 4px;">
+              <span>${escapeHTML(displayBankName)}</span>
+              ${custTag}
+            </div>
             <div class="history-item-time">${formattedTime}</div>
           </div>
           <div class="history-item-right" style="display: flex; align-items: center; gap: 8px;">

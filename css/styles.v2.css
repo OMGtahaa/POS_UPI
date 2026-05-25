@@ -84,7 +84,7 @@ html {
   box-shadow: 0 0 50px rgba(0, 0, 0, 0.6);
   overflow: hidden;
   padding-top: var(--safe-area-top);
-  padding-bottom: var(--safe-area-bottom);
+  padding-bottom: 0; /* Bleed background to screen edge on iOS PWA */
 }
 
 /* --- Main Screen Panels --- */
@@ -295,7 +295,7 @@ html {
 }
 
 .pos-action-container {
-  padding: 0 4px;
+  padding: 0 4px calc(12px + env(safe-area-inset-bottom, 0px)) 4px;
 }
 
 /* --- Bank Selector --- */
@@ -410,6 +410,10 @@ html {
 .card-color-emerald { background: linear-gradient(135deg, #065f46 0%, #064e3b 100%); }
 .card-color-violet { background: linear-gradient(135deg, #6d28d9 0%, #5b21b6 100%); }
 .card-color-grey { background: linear-gradient(135deg, #374151 0%, #1f2937 100%); }
+.card-color-rose { background: linear-gradient(135deg, #be123c 0%, #9f1239 100%); }
+.card-color-amber { background: linear-gradient(135deg, #b45309 0%, #92400e 100%); }
+.card-color-teal { background: linear-gradient(135deg, #0f766e 0%, #115e59 100%); }
+.card-color-indigo { background: linear-gradient(135deg, #4338ca 0%, #3730a3 100%); }
 .card-color-cash { background: linear-gradient(135deg, #059669 0%, #047857 100%); border: 1.5px dashed rgba(255, 255, 255, 0.4) !important; }
 
 .no-banks-configured {
@@ -429,6 +433,7 @@ html {
   align-items: center;
   justify-content: center;
   margin-top: 10px;
+  padding-bottom: env(safe-area-inset-bottom, 12px);
 }
 
 .qr-container-outer {
@@ -514,7 +519,7 @@ html {
 /* --- Settings & Sales Log --- */
 .settings-screen {
   overflow-y: auto;
-  padding-bottom: 24px;
+  padding-bottom: calc(30px + env(safe-area-inset-bottom, 0px));
 }
 
 .settings-group {
@@ -1001,6 +1006,7 @@ html {
 /* --- Bill Maker --- */
 .bill-screen {
   overflow-y: auto !important;
+  padding-bottom: calc(30px + env(safe-area-inset-bottom, 0px)) !important;
 }
 
 .bill-screen,
