@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Service Worker Registration ---
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=19')
+      navigator.serviceWorker.register('./sw.js?v=20')
         .then((reg) => {
           console.log('[Service Worker] Registered successfully:', reg.scope);
           
@@ -43,6 +43,17 @@ document.addEventListener('DOMContentLoaded', () => {
   let activeSelectedBank = null; // Currently chosen bank for QR generation
   let activeEditBankId = null;
   let activeCardColor = 'card-color-hdfc';
+  
+  // Custom Merchant Upgrades (v1.8.0)
+  const CASH_PAYMENT = { id: 'bank_cash', name: 'Cash Payment', upiId: 'cash', holderName: 'CASH', color: 'card-color-cash' };
+  let isAdminModeActive = false;
+  let enteredPin = '';
+
+  // Helper utility to safely resolve a bank by ID (including built-in Cash mode)
+  function getBankById(id) {
+    if (id === CASH_PAYMENT.id) return CASH_PAYMENT;
+    return bankAccounts.find(b => b.id === id) || null;
+  }
   
   // --- Invoice Counter State Initialization ---
   if (!localStorage.getItem('pos_invoice_counter')) {
@@ -271,6 +282,11 @@ document.addEventListener('DOMContentLoaded', () => {
     
     let hash = window.location.hash || '#/pos';
     
+    // Automatically lock admin mode when navigating away from settings
+    if (hash !== '#/settings') {
+      isAdminModeActive = false;
+    }
+    
     // Validate hash, fallback if invalid
     if (!views[hash]) {
       hash = '#/pos';
@@ -405,6 +421,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (loggedInEmailDisplay) loggedInEmailDisplay.value = session.user.email;
             if (authFormLoggedOut) authFormLoggedOut.style.display = 'none';
             if (authFormLoggedIn) authFormLoggedIn.style.display = 'block';
+            const pwdSection = document.getElementById('settings-security-password-section');
+            if (pwdSection) pwdSection.style.display = 'block';
             updateSyncStatusUI('online');
             
             // Sync database files with localStorage on first login
@@ -417,6 +435,8 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('[Supabase Auth] User signed out');
             if (authFormLoggedOut) authFormLoggedOut.style.display = 'block';
             if (authFormLoggedIn) authFormLoggedIn.style.display = 'none';
+            const pwdSection = document.getElementById('settings-security-password-section');
+            if (pwdSection) pwdSection.style.display = 'none';
             if (loggedInEmailDisplay) loggedInEmailDisplay.value = '';
             
             // Centralized Clean Slate Reset on Sign Out
@@ -1006,38 +1026,61 @@ document.addEventListener('DOMContentLoaded', () => {
     // Populate vertical bank list
     selectBankListContainer.innerHTML = '';
     
-    if (bankAccounts.length === 0) {
-      selectBankListContainer.innerHTML = `
-        <div class="no-banks-configured">
-          No bank accounts configured yet.<br>
-          <a href="#/settings" style="color: var(--color-emerald); font-weight:600; text-decoration:none; display:inline-block; margin-top:8px;">Configure Banks in Settings</a>
-        </div>
-      `;
-      return;
-    }
-
-    bankAccounts.forEach(bank => {
-      const row = document.createElement('div');
-      row.className = `bank-option-row ${bank.color}`;
-      row.innerHTML = `
-        <div class="bank-option-details">
-          <div class="bank-option-name">${bank.name}</div>
-          <div class="bank-option-upi">${bank.upiId}</div>
-        </div>
-        <div class="bank-option-arrow">
-          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-          </svg>
-        </div>
-      `;
-      
-      row.addEventListener('click', () => {
-        activeSelectedBank = bank;
-        window.location.hash = '#/qr'; // Progress to QR display view
-      });
-
-      selectBankListContainer.appendChild(row);
+    // Prepend built-in Cash Payment row
+    const cashRow = document.createElement('div');
+    cashRow.className = `bank-option-row ${CASH_PAYMENT.color}`;
+    cashRow.innerHTML = `
+      <div class="bank-option-details">
+        <div class="bank-option-name">${CASH_PAYMENT.name}</div>
+        <div class="bank-option-upi">${CASH_PAYMENT.upiId}</div>
+      </div>
+      <div class="bank-option-arrow">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+        </svg>
+      </div>
+    `;
+    
+    cashRow.addEventListener('click', () => {
+      activeSelectedBank = CASH_PAYMENT;
+      window.location.hash = '#/qr'; // Progress to QR display view
     });
+    
+    selectBankListContainer.appendChild(cashRow);
+    
+    if (bankAccounts.length === 0) {
+      const helpDiv = document.createElement('div');
+      helpDiv.className = 'no-banks-configured';
+      helpDiv.style.marginTop = '15px';
+      helpDiv.innerHTML = `
+        No UPI bank accounts configured yet.<br>
+        <a href="#/settings" style="color: var(--color-emerald); font-weight:600; text-decoration:none; display:inline-block; margin-top:8px;">Configure Banks in Settings</a>
+      `;
+      selectBankListContainer.appendChild(helpDiv);
+    } else {
+      bankAccounts.forEach(bank => {
+        const row = document.createElement('div');
+        row.className = `bank-option-row ${bank.color}`;
+        row.innerHTML = `
+          <div class="bank-option-details">
+            <div class="bank-option-name">${bank.name}</div>
+            <div class="bank-option-upi">${bank.upiId}</div>
+          </div>
+          <div class="bank-option-arrow">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </div>
+        `;
+        
+        row.addEventListener('click', () => {
+          activeSelectedBank = bank;
+          window.location.hash = '#/qr'; // Progress to QR display view
+        });
+
+        selectBankListContainer.appendChild(row);
+      });
+    }
   }
 
   // Dummy swiper renderer function for backward compatibility
@@ -1054,42 +1097,60 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const amount = parseFloat(currentAmountStr);
     
+    // Ensure amount display wrapper is visible
+    const amtWrapper = document.querySelector('.modal-amt-wrapper');
+    if (amtWrapper) amtWrapper.style.display = 'flex';
+
     // Display textual labels
     qrDisplayAmt.innerText = new Intl.NumberFormat('en-IN', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     }).format(amount);
     
-    qrDisplayPayeeBank.innerText = activeSelectedBank.name;
-    qrDisplayPayeeId.innerText = activeSelectedBank.upiId;
-
-    // --- Standard NPCI-Compliant P2P UPI deep link ---
-    let payeeNameEncoded = encodeURIComponent(merchantProfile.name);
-    let npciUpiUrl = `upi://pay?pa=${activeSelectedBank.upiId}&pn=${payeeNameEncoded}&am=${amount.toFixed(2)}&cu=INR`;
+    // Handle Cash Payment View Mode vs UPI QR Mode
+    const qrCanvasWrapper = document.getElementById('qr-canvas-wrapper');
+    const qrCashDisplay = document.getElementById('qr-cash-display');
+    const statusTextSpan = document.querySelector('.modal-status-bar span');
     
-    console.log('[POS] NPCI Compliant UPI Deep Link:', npciUpiUrl);
-
-    // Instanciate or Update QRious
-    if (currentQr === null) {
-      currentQr = new QRious({
-        element: qrCanvas,
-        size: 240,
-        background: '#ffffff',
-        foreground: '#0f172a',
-        level: 'M',
-        value: npciUpiUrl
-      });
+    if (activeSelectedBank.id === 'bank_cash') {
+      if (qrCanvasWrapper) qrCanvasWrapper.style.display = 'none';
+      if (qrCashDisplay) qrCashDisplay.style.display = 'flex';
+      if (statusTextSpan) statusTextSpan.innerText = 'Collect cash and tap confirm below';
+      
+      qrDisplayPayeeBank.innerText = 'Cash Transaction';
+      qrDisplayPayeeId.innerText = 'PHYSICAL CASH';
     } else {
-      currentQr.value = npciUpiUrl;
+      if (qrCanvasWrapper) qrCanvasWrapper.style.display = 'flex';
+      if (qrCashDisplay) qrCashDisplay.style.display = 'none';
+      if (statusTextSpan) statusTextSpan.innerText = 'Customer can scan and pay now';
+      
+      qrDisplayPayeeBank.innerText = activeSelectedBank.name;
+      qrDisplayPayeeId.innerText = activeSelectedBank.upiId;
+
+      // --- Standard NPCI-Compliant P2P UPI deep link ---
+      let payeeNameEncoded = encodeURIComponent(merchantProfile.name);
+      let npciUpiUrl = `upi://pay?pa=${activeSelectedBank.upiId}&pn=${payeeNameEncoded}&am=${amount.toFixed(2)}&cu=INR`;
+      
+      console.log('[POS] NPCI Compliant UPI Deep Link:', npciUpiUrl);
+
+      // Instanciate or Update QRious
+      if (currentQr === null) {
+        currentQr = new QRious({
+          element: qrCanvas,
+          size: 240,
+          background: '#ffffff',
+          foreground: '#0f172a',
+          level: 'M',
+          value: npciUpiUrl
+        });
+      } else {
+        currentQr.value = npciUpiUrl;
+      }
     }
 
-    // Toggle WhatsApp Invoice button on QR screen based on Bill Mode
+    // Toggle WhatsApp Invoice button on QR screen - always visible for both direct POS and Bill Mode!
     if (qrWhatsappBtn) {
-      if (isBillModeActive) {
-        qrWhatsappBtn.style.display = 'flex';
-      } else {
-        qrWhatsappBtn.style.display = 'none';
-      }
+      qrWhatsappBtn.style.display = 'flex';
     }
 
     // Trigger save on manual confirmation click
@@ -1180,14 +1241,13 @@ document.addEventListener('DOMContentLoaded', () => {
   function populateBillBankSelector() {
     if (!billBankSelect) return;
     billBankSelect.innerHTML = '';
-    if (bankAccounts.length === 0) {
-      const opt = document.createElement('option');
-      opt.value = '';
-      opt.innerText = 'No Banks Configured';
-      billBankSelect.appendChild(opt);
-      return;
-    }
     
+    // Prepend built-in Cash Payment option
+    const cashOpt = document.createElement('option');
+    cashOpt.value = CASH_PAYMENT.id;
+    cashOpt.innerText = '💵 Cash Payment';
+    billBankSelect.appendChild(cashOpt);
+
     bankAccounts.forEach(bank => {
       const opt = document.createElement('option');
       opt.value = bank.id;
@@ -1195,12 +1255,12 @@ document.addEventListener('DOMContentLoaded', () => {
       billBankSelect.appendChild(opt);
     });
     
-    // Set selection to current activeSelectedBank if set, else fallback to first bank
+    // Set selection to current activeSelectedBank if set, else fallback to Cash
     if (activeSelectedBank) {
       billBankSelect.value = activeSelectedBank.id;
-    } else if (bankAccounts.length > 0) {
-      billBankSelect.value = bankAccounts[0].id;
-      activeSelectedBank = bankAccounts[0];
+    } else {
+      billBankSelect.value = CASH_PAYMENT.id;
+      activeSelectedBank = CASH_PAYMENT;
     }
   }
   
@@ -1359,13 +1419,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const invoiceNum = billData.invoiceNum || '1';
     const grandTotal = billData.grandTotal || 0;
     
-    // UPI Deep Link Generation
-    const upiLink = `upi://pay?pa=${encodeURIComponent(bank.upiId)}&pn=${encodeURIComponent(shopName)}&am=${grandTotal.toFixed(2)}&cu=INR`;
-    
     let msg = `Hi ${custName !== '-' ? custName : 'Customer'},\n\n`;
     msg += `Thank you for visiting *${shopName}*!\n`;
     msg += `Your invoice *#${invoiceNum}* of *₹${grandTotal.toFixed(2)}* has been successfully generated.\n\n`;
-    msg += `💳 *Tap to Pay via UPI link:*\n${upiLink}\n\n`;
+    
+    if (bank.id !== 'bank_cash') {
+      // UPI Deep Link Generation
+      const upiLink = `upi://pay?pa=${encodeURIComponent(bank.upiId)}&pn=${encodeURIComponent(shopName)}&am=${grandTotal.toFixed(2)}&cu=INR`;
+      msg += `💳 *Tap to Pay via UPI link:*\n${upiLink}\n\n`;
+    } else {
+      msg += `💵 *Payment Mode:* Physical Cash Collected\n\n`;
+    }
     msg += `*(Please check the attached receipt image for full details)*`;
     
     return msg;
@@ -1390,7 +1454,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const baseWidth = 450;
     const headerHeight = 175;
     const itemHeight = 35;
-    const footerHeight = 310;
+    const isCash = bank.id === 'bank_cash';
+    const footerHeight = isCash ? 190 : 310;
     const items = billData.items || [];
     const baseHeight = headerHeight + (items.length * itemHeight) + footerHeight;
     
@@ -1523,36 +1588,52 @@ document.addEventListener('DOMContentLoaded', () => {
     
     currentY += 38;
     
-    // Draw UPI Pay QR Code right on the receipt image!
-    const upiLink = `upi://pay?pa=${bank.upiId}&pn=${encodeURIComponent(shopName)}&am=${billData.grandTotal.toFixed(2)}&cu=INR`;
-    const tempCanvas = document.createElement('canvas');
-    const tempQr = new QRious({
-      element: tempCanvas,
-      value: upiLink,
-      size: 130 * scale, // Draw temp QR at double size for maximum crispness
-      background: '#ffffff',
-      foreground: '#000000', // Monochrome black QR
-      level: 'M'
-    });
-    
-    // Draw white QR card background
-    ctx.fillStyle = '#ffffff';
-    const qrSize = 130;
-    const qrX = (baseWidth - qrSize) / 2;
-    ctx.fillRect(qrX - 10, currentY - 10, qrSize + 20, qrSize + 20);
-    
-    // Draw high-resolution temp QR canvas onto our main canvas
-    ctx.drawImage(tempCanvas, qrX, currentY, qrSize, qrSize);
-    
-    currentY += qrSize + 26;
-    
-    // Footnotes (Monochrome thermal print text style)
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#000000';
-    ctx.font = 'normal 10px "Inter", sans-serif';
-    ctx.fillText('Scan this QR code with your UPI app to pay', baseWidth / 2, currentY);
-    ctx.font = 'bold 10px "Inter", sans-serif';
-    ctx.fillText('THANK YOU FOR YOUR VISIT!', baseWidth / 2, currentY + 18);
+    if (!isCash) {
+      // Draw UPI Pay QR Code right on the receipt image!
+      const upiLink = `upi://pay?pa=${bank.upiId}&pn=${encodeURIComponent(shopName)}&am=${billData.grandTotal.toFixed(2)}&cu=INR`;
+      const tempCanvas = document.createElement('canvas');
+      const tempQr = new QRious({
+        element: tempCanvas,
+        value: upiLink,
+        size: 130 * scale, // Draw temp QR at double size for maximum crispness
+        background: '#ffffff',
+        foreground: '#000000', // Monochrome black QR
+        level: 'M'
+      });
+      
+      // Draw white QR card background
+      ctx.fillStyle = '#ffffff';
+      const qrSize = 130;
+      const qrX = (baseWidth - qrSize) / 2;
+      ctx.fillRect(qrX - 10, currentY - 10, qrSize + 20, qrSize + 20);
+      
+      // Draw high-resolution temp QR canvas onto our main canvas
+      ctx.drawImage(tempCanvas, qrX, currentY, qrSize, qrSize);
+      
+      currentY += qrSize + 26;
+      
+      // Footnotes (Monochrome thermal print text style)
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#000000';
+      ctx.font = 'normal 10px "Inter", sans-serif';
+      ctx.fillText('Scan this QR code with your UPI app to pay', baseWidth / 2, currentY);
+      ctx.font = 'bold 10px "Inter", sans-serif';
+      ctx.fillText('THANK YOU FOR YOUR VISIT!', baseWidth / 2, currentY + 18);
+    } else {
+      // Draw Cash payment monochrome block
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 14px "Inter", sans-serif';
+      ctx.fillText('PAYMENT MODE: CASH', baseWidth / 2, currentY + 15);
+      
+      ctx.font = 'bold 11px "Inter", sans-serif';
+      ctx.fillText('AMOUNT COLLECTED IN PHYSICAL CASH', baseWidth / 2, currentY + 35);
+      
+      currentY += 60;
+      
+      ctx.font = 'bold 10px "Inter", sans-serif';
+      ctx.fillText('THANK YOU FOR YOUR VISIT!', baseWidth / 2, currentY + 18);
+    }
     
     // Convert receipt canvas to Blob and dispatch Web Share / WhatsApp
     canvas.toBlob((blob) => {
@@ -1605,6 +1686,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function initSettingsView() {
     loadSettingsForms();
+    updateSettingsViewMode();
   }
 
   // Save Merchant Profile
@@ -2067,11 +2149,7 @@ document.addEventListener('DOMContentLoaded', () => {
             e.stopPropagation();
             
             // Generate receipt directly using parsed billData to completely prevent async race conditions
-            const txBank = bankAccounts.find(b => b.name === tx.bankName || b.upiId === tx.upiId) || bankAccounts[0];
-            if (!txBank) {
-              alert('Please configure at least one bank account in Settings to generate the UPI link.');
-              return;
-            }
+            const txBank = (tx.upiId === 'cash' || tx.bankName === 'Cash Payment') ? CASH_PAYMENT : (bankAccounts.find(b => b.name === tx.bankName || b.upiId === tx.upiId) || bankAccounts[0] || CASH_PAYMENT);
             
             console.log('[Resend WhatsApp] Regenerating receipt for Invoice #', billData.invoiceNum);
             shareReceiptAsImage(txBank, billData);
@@ -2379,7 +2457,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (billBankSelect) {
     billBankSelect.addEventListener('change', () => {
       const selectedBankId = billBankSelect.value;
-      activeSelectedBank = bankAccounts.find(b => b.id === selectedBankId) || bankAccounts[0];
+      activeSelectedBank = getBankById(selectedBankId) || CASH_PAYMENT;
     });
   }
 
@@ -2393,12 +2471,11 @@ document.addEventListener('DOMContentLoaded', () => {
       // Ensure active selected bank is updated from the dropdown
       if (billBankSelect) {
         const selectedBankId = billBankSelect.value;
-        activeSelectedBank = bankAccounts.find(b => b.id === selectedBankId) || bankAccounts[0];
+        activeSelectedBank = getBankById(selectedBankId) || CASH_PAYMENT;
       }
       
       if (!activeSelectedBank) {
-        alert('Please configure at least one bank account in Settings to generate the UPI link.');
-        return;
+        activeSelectedBank = CASH_PAYMENT;
       }
       
       const totals = calculateBillTotals();
@@ -2423,12 +2500,11 @@ document.addEventListener('DOMContentLoaded', () => {
       let bank = activeSelectedBank;
       if (billBankSelect) {
         const selectedBankId = billBankSelect.value;
-        bank = bankAccounts.find(b => b.id === selectedBankId) || bankAccounts[0];
+        bank = getBankById(selectedBankId) || CASH_PAYMENT;
       }
       
       if (!bank) {
-        alert('Please configure at least one bank account in Settings to generate the UPI link.');
-        return;
+        bank = CASH_PAYMENT;
       }
       
       const totals = calculateBillTotals();
@@ -2476,14 +2552,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (qrWhatsappBtn) {
     qrWhatsappBtn.onclick = () => {
-      if (isBillModeActive && activeSelectedBank) {
+      if (!activeSelectedBank) return;
+      
+      const amount = parseFloat(currentAmountStr);
+      const currentInvoiceNum = localStorage.getItem('pos_invoice_counter') || '1';
+      
+      let billData = null;
+      let transactionNote = '';
+      
+      if (isBillModeActive) {
         const totals = calculateBillTotals();
-        const currentInvoiceNum = localStorage.getItem('pos_invoice_counter') || '1';
         const custName = (billCustNameInput && billCustNameInput.value.trim()) || '-';
         const custPhone = (billCustPhoneInput && billCustPhoneInput.value.trim()) || '-';
         const discInputVal = parseFloat(billDiscountInput.value) || 0;
         
-        const billData = {
+        billData = {
           type: 'bill',
           invoiceNum: currentInvoiceNum,
           custName: custName,
@@ -2496,8 +2579,60 @@ document.addEventListener('DOMContentLoaded', () => {
           savings: totals.savings,
           itemCount: totals.itemCount
         };
-        shareReceiptAsImage(activeSelectedBank, billData);
+        transactionNote = JSON.stringify(billData);
+      } else {
+        // Direct flat POS mode: prompt cashier for customer details sequentially
+        let custName = '-';
+        let custPhone = '-';
+        const phoneInput = prompt('Enter Customer WhatsApp Number (optional, leave blank to skip):');
+        if (phoneInput === null) return; // Cancelled
+        if (phoneInput.trim() !== '') {
+          custPhone = phoneInput.trim();
+          const nameInput = prompt('Enter Customer Name (optional):');
+          if (nameInput !== null && nameInput.trim() !== '') {
+            custName = nameInput.trim();
+          }
+        }
+        
+        billData = {
+          type: 'flat',
+          invoiceNum: currentInvoiceNum,
+          custName: custName,
+          custPhone: custPhone,
+          items: [{ name: 'Retail Sale', qty: 1, price: amount }],
+          discount: 0,
+          discountType: 'flat',
+          grandTotal: amount,
+          subtotal: amount,
+          savings: 0,
+          itemCount: 1
+        };
+        transactionNote = JSON.stringify(billData);
       }
+      
+      // 1. Share crisp receipt image dynamically
+      shareReceiptAsImage(activeSelectedBank, billData);
+      
+      // 2. Increment global invoice counter in localStorage sequentially!
+      const nextInvoiceNum = parseInt(currentInvoiceNum) + 1;
+      localStorage.setItem('pos_invoice_counter', nextInvoiceNum.toString());
+      
+      // 3. Synchronize sequential invoice counter increments to cloud database in real-time
+      pushSettingsMetaToCloud();
+      
+      // 4. Save transaction to history logs
+      addTransaction(billData.grandTotal, activeSelectedBank, transactionNote, 'paid');
+      
+      // 5. Clear active bill inputs and items (if in bill mode)
+      if (isBillModeActive) {
+        clearActiveBill();
+        isBillModeActive = false;
+      }
+      
+      // 6. Reset values & redirect to main POS home keypad view
+      currentAmountStr = '0';
+      activeSelectedBank = null;
+      window.location.hash = '#/pos';
     };
   }
 
@@ -2523,6 +2658,202 @@ document.addEventListener('DOMContentLoaded', () => {
   // Bind real-time input event listener for dynamic search filtering
   if (filterSearchName) {
     filterSearchName.addEventListener('input', renderSalesLogs);
+  }
+
+  // ==========================================================================
+  // STAFF VS ADMIN DUAL-VIEW SETTINGS CONTROLLER (v1.8.0)
+  // ==========================================================================
+  function updateSettingsViewMode() {
+    const btnToggleStaff = document.getElementById('btn-toggle-staff');
+    const btnToggleAdmin = document.getElementById('btn-toggle-admin');
+    const btnLockAdmin = document.getElementById('btn-lock-admin');
+    
+    const cardSales = document.getElementById('settings-card-sales');
+    const statsGrid = document.getElementById('settings-stats-grid');
+    const cardProfile = document.getElementById('settings-card-profile');
+    const cardBankEdit = document.getElementById('settings-card-bank-edit');
+    const cardBankList = document.getElementById('settings-card-bank-list');
+    const cardSync = document.getElementById('settings-card-sync');
+    const cardSecurity = document.getElementById('settings-card-security');
+    const deleteActions = document.querySelector('.history-delete-actions');
+    
+    if (isAdminModeActive) {
+      if (btnToggleStaff) btnToggleStaff.classList.remove('active');
+      if (btnToggleAdmin) btnToggleAdmin.classList.add('active');
+      if (btnLockAdmin) btnLockAdmin.style.display = 'flex';
+      
+      if (statsGrid) statsGrid.style.display = 'grid';
+      if (cardProfile) cardProfile.style.display = 'block';
+      if (cardBankEdit) cardBankEdit.style.display = 'block';
+      if (cardBankList) cardBankList.style.display = 'block';
+      if (cardSync) cardSync.style.display = 'block';
+      if (cardSecurity) cardSecurity.style.display = 'block';
+      if (deleteActions) deleteActions.style.display = 'flex';
+    } else {
+      if (btnToggleStaff) btnToggleStaff.classList.add('active');
+      if (btnToggleAdmin) btnToggleAdmin.classList.remove('active');
+      if (btnLockAdmin) btnLockAdmin.style.display = 'none';
+      
+      if (statsGrid) statsGrid.style.display = 'none';
+      if (cardProfile) cardProfile.style.display = 'none';
+      if (cardBankEdit) cardBankEdit.style.display = 'none';
+      if (cardBankList) cardBankList.style.display = 'none';
+      if (cardSync) cardSync.style.display = 'none';
+      if (cardSecurity) cardSecurity.style.display = 'none';
+      if (deleteActions) deleteActions.style.display = 'none';
+    }
+  }
+
+  // Bind settings toggle buttons
+  const btnToggleStaff = document.getElementById('btn-toggle-staff');
+  const btnToggleAdmin = document.getElementById('btn-toggle-admin');
+  const btnLockAdmin = document.getElementById('btn-lock-admin');
+  const adminPinModal = document.getElementById('admin-pin-modal');
+  const btnPinCancel = document.getElementById('btn-pin-cancel');
+  const btnPinClear = document.getElementById('btn-pin-clear');
+  const pinDots = document.querySelectorAll('.pin-dot');
+  const pinKeys = document.querySelectorAll('.pin-key[data-val]');
+
+  if (btnToggleStaff) {
+    btnToggleStaff.addEventListener('click', () => {
+      isAdminModeActive = false;
+      updateSettingsViewMode();
+    });
+  }
+
+  if (btnToggleAdmin) {
+    btnToggleAdmin.addEventListener('click', () => {
+      if (isAdminModeActive) return;
+      
+      // Open Secure Indigo Pinpad modal
+      if (adminPinModal) {
+        adminPinModal.style.display = 'flex';
+        enteredPin = '';
+        resetPinDots();
+      }
+    });
+  }
+
+  if (btnLockAdmin) {
+    btnLockAdmin.addEventListener('click', () => {
+      isAdminModeActive = false;
+      updateSettingsViewMode();
+    });
+  }
+
+  if (btnPinCancel) {
+    btnPinCancel.addEventListener('click', () => {
+      if (adminPinModal) adminPinModal.style.display = 'none';
+      enteredPin = '';
+      updateSettingsViewMode(); // Keep staff mode visually active
+    });
+  }
+
+  if (btnPinClear) {
+    btnPinClear.addEventListener('click', () => {
+      if (enteredPin.length > 0) {
+        enteredPin = enteredPin.slice(0, -1);
+        updatePinDots();
+      }
+    });
+  }
+
+  pinKeys.forEach(key => {
+    key.addEventListener('click', () => {
+      const val = key.getAttribute('data-val');
+      if (enteredPin.length < 4) {
+        enteredPin += val;
+        updatePinDots();
+        
+        if (enteredPin.length === 4) {
+          const correctPin = localStorage.getItem('pos_admin_pin') || '1234';
+          if (enteredPin === correctPin) {
+            isAdminModeActive = true;
+            setTimeout(() => {
+              if (adminPinModal) adminPinModal.style.display = 'none';
+              updateSettingsViewMode();
+            }, 200);
+          } else {
+            // Flash error dots
+            pinDots.forEach(dot => dot.classList.add('error'));
+            setTimeout(() => {
+              enteredPin = '';
+              resetPinDots();
+            }, 600);
+          }
+        }
+      }
+    });
+  });
+
+  function resetPinDots() {
+    pinDots.forEach(dot => {
+      dot.classList.remove('filled');
+      dot.classList.remove('error');
+    });
+  }
+
+  function updatePinDots() {
+    resetPinDots();
+    for (let i = 0; i < enteredPin.length; i++) {
+      if (pinDots[i]) pinDots[i].classList.add('filled');
+    }
+  }
+
+  // --- Account Security Credentials Save Listeners ---
+  const saveSecurityPinBtn = document.getElementById('save-security-pin-btn');
+  const securityPinInput = document.getElementById('settings-security-pin');
+  
+  if (saveSecurityPinBtn && securityPinInput) {
+    saveSecurityPinBtn.addEventListener('click', () => {
+      const newPin = securityPinInput.value.trim();
+      if (!/^\d{4}$/.test(newPin)) {
+        alert('PIN must be exactly 4 digits!');
+        return;
+      }
+      localStorage.setItem('pos_admin_pin', newPin);
+      alert('Admin PIN updated successfully!');
+      securityPinInput.value = '';
+    });
+  }
+
+  const saveSecurityPasswordBtn = document.getElementById('save-security-password-btn');
+  const securityPasswordInput = document.getElementById('settings-security-password');
+  
+  if (saveSecurityPasswordBtn && securityPasswordInput) {
+    saveSecurityPasswordBtn.addEventListener('click', async () => {
+      const newPassword = securityPasswordInput.value.trim();
+      if (newPassword.length < 6) {
+        alert('Password must be at least 6 characters long!');
+        return;
+      }
+      
+      saveSecurityPasswordBtn.disabled = true;
+      saveSecurityPasswordBtn.innerText = 'Updating password...';
+      
+      try {
+        if (!supabase) {
+          alert('Supabase database sync is not initialized!');
+          saveSecurityPasswordBtn.disabled = false;
+          saveSecurityPasswordBtn.innerText = 'Update Cloud Password';
+          return;
+        }
+        
+        const { error } = await supabase.auth.updateUser({ password: newPassword });
+        if (error) {
+          alert('Error updating password: ' + error.message);
+        } else {
+          alert('Cloud sync password updated successfully!');
+          securityPasswordInput.value = '';
+        }
+      } catch (err) {
+        console.error('Password update exception:', err);
+        alert('An unexpected error occurred during password update.');
+      } finally {
+        saveSecurityPasswordBtn.disabled = false;
+        saveSecurityPasswordBtn.innerText = 'Update Cloud Password';
+      }
+    });
   }
 
   window.addEventListener('online', processSyncQueue); // Queue worker hook
