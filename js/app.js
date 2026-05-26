@@ -17,9 +17,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Service Worker Registration ---
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=32')
+      navigator.serviceWorker.register('./sw.js?v=1.9.1')
         .then((reg) => {
           console.log('[Service Worker] Registered successfully:', reg.scope);
+          
+          // Force update check on load to prevent stale caching
+          reg.update();
           
           // Auto-detect service worker updates and trigger an instant page refresh
           reg.onupdatefound = () => {
@@ -269,9 +272,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const billSummaryTotal = document.getElementById('bill-summary-total');
   const billProceedBtn = document.getElementById('bill-proceed-btn');
   const billWhatsappBtn = document.getElementById('bill-whatsapp-btn');
+  const billPrintBtn = document.getElementById('bill-print-btn');
   const billResetBtn = document.getElementById('bill-reset-btn');
   const headerBillBtn = document.getElementById('header-bill-btn');
   const qrWhatsappBtn = document.getElementById('qr-whatsapp-btn');
+  const qrPrintBtn = document.getElementById('qr-print-btn');
   const billBankSelect = document.getElementById('bill-bank-select');
   const billInvoiceNum = document.getElementById('bill-invoice-num');
   
@@ -330,8 +335,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- Hash-based Router ---
   function router() {
-    // Dismiss mobile keyboard on any routing change
+    // Dismiss mobile keyboard and release active input focus on routing changes
     if (document.activeElement) document.activeElement.blur();
+    document.querySelectorAll('input, textarea').forEach(el => el.blur());
     
     let hash = window.location.hash || '#/pos';
     
@@ -1288,18 +1294,22 @@ document.addEventListener('DOMContentLoaded', () => {
     if (qrWhatsappBtn) {
       qrWhatsappBtn.style.display = 'flex';
     }
+    if (qrPrintBtn) {
+      qrPrintBtn.style.display = 'flex';
+    }
 
     // Trigger save on manual confirmation click
     qrConfirmPaidBtn.onclick = () => {
-      let transactionNote = 'POS' + Math.floor(Math.random() * 1000000);
+      const currentInvoiceNum = localStorage.getItem('pos_invoice_counter') || '1';
+      let billData;
+
       if (isBillModeActive) {
-        const currentInvoiceNum = localStorage.getItem('pos_invoice_counter') || '1';
         const custName = (billCustNameInput && billCustNameInput.value.trim()) || '-';
         const custPhone = (billCustPhoneInput && billCustPhoneInput.value.trim()) || '-';
         const discInputVal = parseFloat(billDiscountInput.value) || 0;
         const totals = calculateBillTotals();
         
-        const billData = {
+        billData = {
           type: 'bill',
           invoiceNum: currentInvoiceNum,
           custName: custName,
@@ -1312,15 +1322,30 @@ document.addEventListener('DOMContentLoaded', () => {
           savings: totals.savings,
           itemCount: totals.itemCount
         };
-        transactionNote = JSON.stringify(billData);
-        
-        // Increment global invoice counter in localStorage sequentially!
-        const nextInvoiceNum = parseInt(currentInvoiceNum) + 1;
-        localStorage.setItem('pos_invoice_counter', nextInvoiceNum.toString());
-        
-        // Synchronize sequential invoice counter increments to cloud database in real-time
-        pushSettingsMetaToCloud();
+      } else {
+        billData = {
+          type: 'flat',
+          invoiceNum: currentInvoiceNum,
+          custName: '-',
+          custPhone: '-',
+          items: [{ name: 'TOTAL', qty: 1, price: amount }],
+          discount: 0,
+          discountType: 'flat',
+          grandTotal: amount,
+          subtotal: amount,
+          savings: 0,
+          itemCount: 1
+        };
       }
+      
+      const transactionNote = JSON.stringify(billData);
+      
+      // Increment global invoice counter in localStorage sequentially!
+      const nextInvoiceNum = parseInt(currentInvoiceNum) + 1;
+      localStorage.setItem('pos_invoice_counter', nextInvoiceNum.toString());
+      
+      // Synchronize sequential invoice counter increments to cloud database in real-time
+      pushSettingsMetaToCloud();
       
       addTransaction(amount, activeSelectedBank, transactionNote, 'paid');
       
@@ -1569,8 +1594,278 @@ document.addEventListener('DOMContentLoaded', () => {
     return msg;
   }
 
-  // Draw invoice on an offline canvas and share it as an image with text fallback
-  function shareReceiptAsImage(bank, billData) {
+  function triggerBrowserPrint(bank, billData, format) {
+    const isAndroid = /android/i.test(navigator.userAgent);
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+    
+    // On Android, window.print() produces blank pages in WebAPK/TWA context.
+    // Instead, render the receipt as a high-quality image and use the native Share sheet.
+    if (isAndroid) {
+      if (!isStandalone) {
+        // Show install suggestion as a non-blocking toast instead of ugly alert()
+        showInstallSuggestionToast();
+      }
+      shareReceiptAsImage(bank, billData, true, format);
+      return;
+    }
+
+    // Desktop / iOS path: use window.print() with the HTML print layout
+    const printLayout = document.getElementById('print-invoice-layout');
+    if (!printLayout) return;
+    
+    const shopName = merchantProfile.name || 'Shop Name';
+    const shopAddress = merchantProfile.address || 'Shop Address';
+    const shopPhone = merchantProfile.phone || '0000000000';
+    const invoiceNum = billData.invoiceNum || '1';
+    const custName = billData.custName || '-';
+    const custPhone = billData.custPhone || '-';
+    const dateStr = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+    
+    const itemsHtml = (billData.items || []).map(item => `
+      <tr>
+        <td style="padding: ${format === '80mm' ? '4px 0' : '10px 12px'}; text-align: left;">${escapeHTML(item.name)}</td>
+        <td style="text-align: center; padding: ${format === '80mm' ? '4px 0' : '10px 12px'};">${item.qty}</td>
+        <td style="text-align: center; padding: ${format === '80mm' ? '4px 0' : '10px 12px'};">₹${item.price.toFixed(2)}</td>
+        <td style="text-align: right; padding: ${format === '80mm' ? '4px 0' : '10px 12px'}; font-weight: bold;">₹${(item.qty * item.price).toFixed(2)}</td>
+      </tr>
+    `).join('');
+    
+    let discountHtml = '';
+    if (billData.savings > 0) {
+      const discSymbol = billData.discountType === 'percent' ? `${billData.discount}%` : `₹${billData.discount}`;
+      discountHtml = `
+        <div class="summary-row" style="display: flex; justify-content: space-between; font-size: ${format === '80mm' ? '11px' : '13px'}; color: #333333; margin-top: 4px;">
+          <span>Discount (${discSymbol}):</span>
+          <span>-₹${billData.savings.toFixed(2)}</span>
+        </div>
+      `;
+    }
+    
+    if (format === '80mm') {
+      printLayout.className = 'receipt-80mm';
+      printLayout.innerHTML = `
+        <div class="receipt-header">
+          <h1 class="shop-name">${escapeHTML(shopName.toUpperCase())}</h1>
+          <p class="shop-meta">${escapeHTML(shopAddress)}</p>
+          <p class="shop-meta">Ph: ${escapeHTML(shopPhone)}</p>
+        </div>
+        <div class="receipt-divider"></div>
+        <div class="invoice-info">
+          <strong>Invoice #:</strong> ${escapeHTML(invoiceNum)}<br>
+          <strong>Date:</strong> ${dateStr}, ${timeStr}<br>
+          <strong>Customer:</strong> ${escapeHTML(custName)}<br>
+          <strong>Phone:</strong> ${escapeHTML(custPhone)}
+        </div>
+        <div class="receipt-divider"></div>
+        <table class="receipt-table">
+          <thead>
+            <tr>
+              <th style="text-align: left;">ITEM</th>
+              <th style="text-align: center; width: 30px;">QTY</th>
+              <th style="text-align: center; width: 50px;">PRICE</th>
+              <th style="text-align: right; width: 60px;">TOTAL</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsHtml}
+          </tbody>
+        </table>
+        <div class="receipt-divider"></div>
+        <div class="receipt-summary">
+          <div class="summary-row">
+             <span>Subtotal (${billData.itemCount} items):</span>
+             <span>₹${billData.subtotal.toFixed(2)}</span>
+          </div>
+          ${discountHtml}
+          <div class="summary-row grand-total-row">
+            <strong>GRAND TOTAL:</strong>
+            <strong>₹${billData.grandTotal.toFixed(2)}</strong>
+          </div>
+        </div>
+        
+        <div class="receipt-footer-text">
+          THANK YOU FOR YOUR VISIT!
+        </div>
+      `;
+    } else {
+      // A4 Document format
+      printLayout.className = 'invoice-a4';
+      printLayout.innerHTML = `
+        <div class="header-row">
+          <div class="company-section">
+            <h1 class="company-name">${escapeHTML(shopName.toUpperCase())}</h1>
+            <p class="company-address">${escapeHTML(shopAddress)}<br>Phone: ${escapeHTML(shopPhone)}</p>
+          </div>
+          <div class="invoice-title-section">
+            <h2 class="invoice-heading">INVOICE</h2>
+            <span class="invoice-number">Invoice No: ${escapeHTML(invoiceNum)}</span>
+          </div>
+        </div>
+        
+        <div class="invoice-details-grid">
+          <div class="details-column">
+            <p><strong>Billed To (Customer Detail):</strong></p>
+            <p>Customer Name: ${escapeHTML(custName)}</p>
+            <p>Customer Phone: ${escapeHTML(custPhone)}</p>
+          </div>
+          <div class="details-column" style="text-align: right;">
+            <p><strong>Invoice Details:</strong></p>
+            <p>Date: ${dateStr}</p>
+            <p>Time: ${timeStr}</p>
+            <p>Status: </p>
+          </div>
+        </div>
+        
+        <div class="table-container">
+          <table class="invoice-table">
+            <thead>
+              <tr>
+                <th style="text-align: left;">Item Description</th>
+                <th style="text-align: center; width: 80px;">Qty</th>
+                <th style="text-align: center; width: 120px;">Unit Price (₹)</th>
+                <th style="text-align: right; width: 150px;">Total Amount (₹)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsHtml}
+            </tbody>
+          </table>
+        </div>
+        
+        <div class="bottom-grid">
+          <div></div>
+          
+          <div class="totals-section">
+            <div class="totals-row">
+              <span>Subtotal:</span>
+              <span>₹${billData.subtotal.toFixed(2)}</span>
+            </div>
+            ${billData.savings > 0 ? `
+              <div class="totals-row">
+                <span>Discount:</span>
+                <span>-₹${billData.savings.toFixed(2)}</span>
+              </div>
+            ` : ''}
+            <div class="totals-row grand-total">
+               <span>Grand Total:</span>
+               <span>₹${billData.grandTotal.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="invoice-footer">
+          Thank you for your visit
+        </div>
+      `;
+    }
+    
+    // Small timeout to allow styling to resolve before printing
+    setTimeout(() => {
+      const cleanupPrint = () => {
+        printLayout.innerHTML = '';
+        printLayout.className = 'print-only';
+        window.removeEventListener('afterprint', cleanupPrint);
+      };
+      window.addEventListener('afterprint', cleanupPrint);
+      window.print();
+    }, 250);
+  }
+  
+  // Non-blocking install suggestion toast for Android Chrome users
+  function showInstallSuggestionToast() {
+    // Only show once per session
+    if (window._installToastShown) return;
+    window._installToastShown = true;
+    
+    const toast = document.createElement('div');
+    toast.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(30,41,59,0.95);color:#e2e8f0;padding:14px 22px;border-radius:14px;font-size:13px;z-index:99999;max-width:90vw;text-align:center;backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.08);box-shadow:0 8px 32px rgba(0,0,0,0.4);animation:fadeInUp 0.3s ease-out;';
+    toast.innerHTML = '💡 <strong>Tip:</strong> Install this app to your home screen for the best printing experience! <em>(⋮ menu → Install app)</em>';
+    document.body.appendChild(toast);
+    
+    // Add animation keyframes if not present
+    if (!document.getElementById('toast-anim-style')) {
+      const style = document.createElement('style');
+      style.id = 'toast-anim-style';
+      style.textContent = '@keyframes fadeInUp{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}';
+      document.head.appendChild(style);
+    }
+    
+    setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.5s'; }, 5000);
+    setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 5500);
+  }
+
+  function showPrintLayoutModal(bank, billData) {
+    const modal = document.getElementById('print-layout-modal');
+    const btn80 = document.getElementById('print-format-80mm-btn');
+    const btnA4 = document.getElementById('print-format-a4-btn');
+    const btnCancel = document.getElementById('print-format-cancel-btn');
+    
+    if (!modal) return;
+    modal.style.display = 'flex';
+    
+    const cleanup = () => {
+      modal.style.display = 'none';
+      btn80.onclick = null;
+      btnA4.onclick = null;
+      btnCancel.onclick = null;
+    };
+    
+    btn80.onclick = () => {
+      cleanup();
+      triggerBrowserPrint(bank, billData, '80mm');
+    };
+    
+    btnA4.onclick = () => {
+      cleanup();
+      triggerBrowserPrint(bank, billData, 'a4');
+    };
+    
+    btnCancel.onclick = () => {
+      cleanup();
+    };
+  }
+  
+  function showCustomerPromptModal(initialName, initialPhone, onConfirm) {
+    const modal = document.getElementById('customer-details-modal');
+    const nameInput = document.getElementById('prompt-cust-name');
+    const phoneInput = document.getElementById('prompt-cust-phone');
+    const saveBtn = document.getElementById('prompt-save-btn');
+    const cancelBtn = document.getElementById('prompt-cancel-btn');
+    
+    if (!modal || !nameInput || !phoneInput) return;
+    
+    nameInput.value = (initialName && initialName !== '-') ? initialName : '';
+    phoneInput.value = (initialPhone && initialPhone !== '-') ? initialPhone : '';
+    
+    modal.style.display = 'flex';
+    nameInput.focus();
+    
+    const cleanup = () => {
+      modal.style.display = 'none';
+      saveBtn.onclick = null;
+      cancelBtn.onclick = null;
+    };
+    
+    saveBtn.onclick = () => {
+      const finalName = nameInput.value.trim() || '-';
+      const finalPhone = phoneInput.value.trim() || '-';
+      cleanup();
+      onConfirm(finalName, finalPhone);
+    };
+    
+    cancelBtn.onclick = () => {
+      cleanup();
+    };
+  }
+
+  // =====================================================================
+  //  UNIFIED RECEIPT IMAGE GENERATOR
+  //  Used for: Android print fallback, WhatsApp sharing, History resend
+  //  Two modes: '80mm' (thermal receipt) and 'a4' (professional invoice)
+  // =====================================================================
+  
+  function shareReceiptAsImage(bank, billData, isPrintShare = false, format = '80mm') {
     if (!bank || !billData) return;
     
     const custName = billData.custName || '-';
@@ -1579,197 +1874,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const shopAddress = merchantProfile.address || 'Shop Address';
     const shopPhone = merchantProfile.phone || '0000000000';
     const invoiceNum = billData.invoiceNum || '1';
+    const isCash = bank.id === 'bank_cash';
+    const items = billData.items || [];
     
-    // Create an offline canvas and render details with 2x High-DPI resolution scaling
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     
-    const scale = 2; // High-resolution scale factor (Retina/WhatsApp sharpness)
-    const baseWidth = 450;
-    const headerHeight = 175;
-    const itemHeight = 35;
-    const isCash = bank.id === 'bank_cash';
-    const footerHeight = isCash ? 190 : 310;
-    const items = billData.items || [];
-    const baseHeight = headerHeight + (items.length * itemHeight) + footerHeight;
-    
-    canvas.width = baseWidth * scale;
-    canvas.height = baseHeight * scale;
-    
-    // Scale context automatically so coordinates remain simple (1x values)
-    ctx.scale(scale, scale);
-    
-    // Pure White background (strictly standard for thermal roll print compatibility)
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, baseWidth, baseHeight);
-    
-    // Monochrome Thin Dashed Frame
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
-    ctx.strokeRect(10, 10, baseWidth - 20, baseHeight - 20);
-    ctx.setLineDash([]); // Reset
-    
-    // Shop header (Monochrome black text)
-    ctx.fillStyle = '#000000';
-    ctx.font = 'bold 22px "Inter", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(shopName.toUpperCase(), baseWidth / 2, 45);
-    
-    ctx.fillStyle = '#000000';
-    ctx.font = 'normal 11px "Inter", sans-serif';
-    ctx.fillText(`${shopAddress} | Ph: ${shopPhone}`, baseWidth / 2, 65);
-    
-    // Solid Black Divider
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(25, 80);
-    ctx.lineTo(baseWidth - 25, 80);
-    ctx.stroke();
-    
-    // Date & Customer details
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#000000';
-    ctx.font = '11px "Inter", sans-serif';
-    
-    const now = new Date();
-    const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-    
-    ctx.fillText(`Invoice #: ${invoiceNum}`, 25, 100);
-    ctx.fillText(`Date: ${dateStr}, ${timeStr}`, 25, 115);
-    ctx.fillText(`Customer: ${custName}`, 25, 130);
-    ctx.fillText(`Phone: ${custPhone}`, 25, 145);
-    
-    // Table Headers divider (Solid Black)
-    ctx.beginPath();
-    ctx.moveTo(25, 160);
-    ctx.lineTo(baseWidth - 25, 160);
-    ctx.stroke();
-    
-    ctx.fillStyle = '#000000';
-    ctx.font = 'bold 10px "Inter", sans-serif';
-    ctx.fillText('ITEM', 25, 172);
-    ctx.textAlign = 'center';
-    ctx.fillText('QTY x PRICE', baseWidth / 2 + 25, 172);
-    ctx.textAlign = 'right';
-    ctx.fillText('AMOUNT', baseWidth - 25, 172);
-    
-    ctx.beginPath();
-    ctx.moveTo(25, 180);
-    ctx.lineTo(baseWidth - 25, 180);
-    ctx.stroke();
-    
-    // Print items list
-    let currentY = 202;
-    ctx.font = '12px "Inter", sans-serif';
-    
-    items.forEach(item => {
-      ctx.textAlign = 'left';
-      ctx.fillStyle = '#000000';
-      ctx.fillText(item.name, 25, currentY);
-      
-      ctx.textAlign = 'center';
-      ctx.fillText(`${item.qty} x ₹${item.price.toFixed(2)}`, baseWidth / 2 + 25, currentY);
-      
-      ctx.textAlign = 'right';
-      ctx.font = 'bold 12px "Inter", sans-serif';
-      ctx.fillText(`₹${(item.price * item.qty).toFixed(2)}`, baseWidth - 25, currentY);
-      
-      ctx.font = '12px "Inter", sans-serif';
-      currentY += itemHeight;
-    });
-    
-    // Bottom item divider (Solid Black)
-    ctx.beginPath();
-    ctx.moveTo(25, currentY - 12);
-    ctx.lineTo(baseWidth - 25, currentY - 12);
-    ctx.stroke();
-    
-    // Subtotal and Savings
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#000000';
-    ctx.font = '11px "Inter", sans-serif';
-    ctx.fillText(`Subtotal (${billData.itemCount} items):`, 25, currentY + 10);
-    ctx.textAlign = 'right';
-    ctx.fillText(`₹${billData.subtotal.toFixed(2)}`, baseWidth - 25, currentY + 10);
-    
-    currentY += 28;
-    
-    if (billData.savings > 0) {
-      const discSymbol = billData.discountType === 'percent' ? `${billData.discount}%` : `₹${billData.discount}`;
-      ctx.textAlign = 'left';
-      ctx.fillText(`Discount (${discSymbol}):`, 25, currentY);
-      ctx.textAlign = 'right';
-      ctx.fillText(`-₹${billData.savings.toFixed(2)}`, baseWidth - 25, currentY);
-      currentY += 20;
-    }
-    
-    // Grand Total Divider (Solid Black)
-    ctx.beginPath();
-    ctx.moveTo(25, currentY - 4);
-    ctx.lineTo(baseWidth - 25, currentY - 4);
-    ctx.stroke();
-    
-    // Grand Total
-    ctx.textAlign = 'left';
-    ctx.font = 'bold 13px "Inter", sans-serif';
-    ctx.fillText('GRAND TOTAL:', 25, currentY + 14);
-    ctx.textAlign = 'right';
-    ctx.font = 'bold 15px "Inter", sans-serif';
-    ctx.fillText(`₹${billData.grandTotal.toFixed(2)}`, baseWidth - 25, currentY + 14);
-    
-    currentY += 38;
-    
-    if (!isCash) {
-      // Draw UPI Pay QR Code right on the receipt image!
-      const upiLink = `upi://pay?pa=${bank.upiId}&pn=${encodeURIComponent(shopName)}&am=${billData.grandTotal.toFixed(2)}&cu=INR`;
-      const tempCanvas = document.createElement('canvas');
-      const tempQr = new QRious({
-        element: tempCanvas,
-        value: upiLink,
-        size: 130 * scale, // Draw temp QR at double size for maximum crispness
-        background: '#ffffff',
-        foreground: '#000000', // Monochrome black QR
-        level: 'M'
-      });
-      
-      // Draw white QR card background
-      ctx.fillStyle = '#ffffff';
-      const qrSize = 130;
-      const qrX = (baseWidth - qrSize) / 2;
-      ctx.fillRect(qrX - 10, currentY - 10, qrSize + 20, qrSize + 20);
-      
-      // Draw high-resolution temp QR canvas onto our main canvas
-      ctx.drawImage(tempCanvas, qrX, currentY, qrSize, qrSize);
-      
-      currentY += qrSize + 26;
-      
-      // Footnotes (Monochrome thermal print text style)
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#000000';
-      ctx.font = 'normal 10px "Inter", sans-serif';
-      ctx.fillText('Scan this QR code with your UPI app to pay', baseWidth / 2, currentY);
-      ctx.font = 'bold 10px "Inter", sans-serif';
-      ctx.fillText('THANK YOU FOR YOUR VISIT!', baseWidth / 2, currentY + 18);
+    if (format === 'a4') {
+      drawInvoiceA4(canvas, ctx, { shopName, shopAddress, shopPhone, invoiceNum, custName, custPhone, isCash, items, billData, bank });
     } else {
-      // Draw Cash payment monochrome block
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#000000';
-      ctx.font = 'bold 14px "Inter", sans-serif';
-      ctx.fillText('PAYMENT MODE: CASH', baseWidth / 2, currentY + 15);
-      
-      ctx.font = 'bold 11px "Inter", sans-serif';
-      ctx.fillText('AMOUNT COLLECTED IN PHYSICAL CASH', baseWidth / 2, currentY + 35);
-      
-      currentY += 60;
-      
-      ctx.font = 'bold 10px "Inter", sans-serif';
-      ctx.fillText('THANK YOU FOR YOUR VISIT!', baseWidth / 2, currentY + 18);
+      drawReceipt80mm(canvas, ctx, { shopName, shopAddress, shopPhone, invoiceNum, custName, custPhone, isCash, items, billData, bank });
     }
     
-    // Convert receipt canvas to Blob and dispatch Web Share / WhatsApp
+    // Convert canvas to PNG blob and share
     canvas.toBlob((blob) => {
       if (!blob) return;
       
@@ -1777,7 +1894,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const text = generateWhatsAppInvoiceText(bank, billData);
       const cleanPhone = custPhone.replace(/\D/g, '');
       
-      // Robust capability detection for Web Share API
       let isShareSupported = false;
       try {
         isShareSupported = navigator.canShare && navigator.canShare({ files: [file] });
@@ -1786,21 +1902,470 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       
       if (isShareSupported) {
-        navigator.share({
-          title: `Receipt from ${shopName}`,
-          text: text,
-          files: [file]
-        })
-        .then(() => console.log('[Web Share] Shared receipt image successfully'))
-        .catch((err) => {
-          console.warn('[Web Share] Image sharing failed or rejected, falling back to WhatsApp text link:', err);
-          openWhatsAppTextFallback(cleanPhone, text);
-        });
+        const shareData = { title: `Receipt from ${shopName}`, files: [file] };
+        if (!isPrintShare) {
+          shareData.text = text;
+        }
+        navigator.share(shareData)
+          .then(() => console.log('[Web Share] Shared receipt image successfully'))
+          .catch((err) => {
+            console.warn('[Web Share] Image sharing failed or rejected:', err);
+            // Avoid triggering WhatsApp Web fallback if user explicitly aborted/cancelled the share sheet
+            if (err && (err.name === 'AbortError' || err.message.toLowerCase().includes('abort') || err.message.toLowerCase().includes('cancel'))) {
+              console.log('[Web Share] Share was cancelled/aborted by the user.');
+              return;
+            }
+            if (!isPrintShare) openWhatsAppTextFallback(cleanPhone, text);
+          });
       } else {
-        // Robust text-only fallback (Desktop Chrome, non-HTTPS local tests)
-        openWhatsAppTextFallback(cleanPhone, text);
+        if (!isPrintShare) openWhatsAppTextFallback(cleanPhone, text);
+        else alert('Sharing is not supported on this device/browser.');
       }
     }, 'image/png');
+  }
+  
+  // ------------------------------------------------------------------
+  //  80mm THERMAL RECEIPT DRAWING
+  //  576px wide at 1x (native 203 DPI thermal printer resolution)
+  //  Pure monochrome output with 1-bit threshold for crisp thermal print
+  // ------------------------------------------------------------------
+  function drawReceipt80mm(canvas, ctx, d) {
+    const W = 576;
+    const pad = 30;
+    const itemH = 45;
+    
+    // Calculate the height dynamically based on the exact same layout rules!
+    let calcH = 272; // Items start at y = 272
+    calcH += d.items.length * itemH;
+    calcH += 38; // Subtotal spacing
+    if (d.billData.savings > 0) {
+      calcH += 24; // Discount spacing
+    }
+    calcH += 56; // Grand total spacing
+    
+    if (!d.isCash) {
+      calcH += 180; // QR size (qrSize = 180)
+      calcH += 28;  // Spacing after QR
+      calcH += 28;  // Spacing to THANK YOU
+      calcH += 40;  // Bottom safety padding
+    } else {
+      calcH += 16;  // Spacing to cash THANK YOU
+      calcH += 18;  // Spacing to THANK YOU
+      calcH += 40;  // Bottom safety padding
+    }
+    
+    const H = calcH;
+    canvas.width = W;
+    canvas.height = H;
+    ctx.imageSmoothingEnabled = false;
+    
+    // White background
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#000';
+    
+    // --- Header ---
+    ctx.font = 'bold 32px "Inter", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(d.shopName.toUpperCase(), W / 2, 48);
+    
+    ctx.font = '18px "Inter", sans-serif';
+    ctx.fillText(`${d.shopAddress} | Ph: ${d.shopPhone}`, W / 2, 78);
+    
+    // Divider
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(pad, 98); ctx.lineTo(W - pad, 98); ctx.stroke();
+    
+    // --- Invoice info ---
+    ctx.textAlign = 'left';
+    ctx.font = '18px "Inter", sans-serif';
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+    
+    ctx.fillText(`Invoice #: ${d.invoiceNum}`, pad, 122);
+    ctx.fillText(`Date: ${dateStr}, ${timeStr}`, pad, 147);
+    ctx.fillText(`Customer: ${d.custName}`, pad, 172);
+    ctx.fillText(`Phone: ${d.custPhone}`, pad, 197);
+    
+    // --- Table header ---
+    ctx.beginPath(); ctx.moveTo(pad, 212); ctx.lineTo(W - pad, 212); ctx.stroke();
+    
+    ctx.font = 'bold 16px "Inter", sans-serif';
+    ctx.fillText('ITEM', pad, 232);
+    ctx.textAlign = 'center';
+    ctx.fillText('QTY x PRICE', W / 2 + pad, 232);
+    ctx.textAlign = 'right';
+    ctx.fillText('AMOUNT', W - pad, 232);
+    
+    ctx.beginPath(); ctx.moveTo(pad, 242); ctx.lineTo(W - pad, 242); ctx.stroke();
+    
+    // --- Items ---
+    let y = 272;
+    d.items.forEach(item => {
+      ctx.textAlign = 'left';
+      ctx.font = '18px "Inter", sans-serif';
+      ctx.fillText(item.name, pad, y);
+      ctx.textAlign = 'center';
+      ctx.fillText(`${item.qty} x ₹${item.price.toFixed(2)}`, W / 2 + pad, y);
+      ctx.textAlign = 'right';
+      ctx.font = 'bold 18px "Inter", sans-serif';
+      ctx.fillText(`₹${(item.price * item.qty).toFixed(2)}`, W - pad, y);
+      y += itemH;
+    });
+    
+    // Bottom divider
+    ctx.beginPath(); ctx.moveTo(pad, y - 14); ctx.lineTo(W - pad, y - 14); ctx.stroke();
+    
+    // --- Totals ---
+    ctx.font = '18px "Inter", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(`Subtotal (${d.billData.itemCount} items):`, pad, y + 14);
+    ctx.textAlign = 'right';
+    ctx.fillText(`₹${d.billData.subtotal.toFixed(2)}`, W - pad, y + 14);
+    y += 38;
+    
+    if (d.billData.savings > 0) {
+      const sym = d.billData.discountType === 'percent' ? `${d.billData.discount}%` : `₹${d.billData.discount}`;
+      ctx.textAlign = 'left';
+      ctx.fillText(`Discount (${sym}):`, pad, y);
+      ctx.textAlign = 'right';
+      ctx.fillText(`-₹${d.billData.savings.toFixed(2)}`, W - pad, y);
+      y += 24;
+    }
+    
+    ctx.beginPath(); ctx.moveTo(pad, y - 4); ctx.lineTo(W - pad, y - 4); ctx.stroke();
+    
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 22px "Inter", sans-serif';
+    ctx.fillText('GRAND TOTAL:', pad, y + 24);
+    ctx.textAlign = 'right';
+    ctx.font = 'bold 26px "Inter", sans-serif';
+    ctx.fillText(`₹${d.billData.grandTotal.toFixed(2)}`, W - pad, y + 24);
+    y += 56;
+    
+    // --- Footer: UPI QR or Thank You ---
+    if (!d.isCash) {
+      const upiLink = `upi://pay?pa=${d.bank.upiId}&pn=${encodeURIComponent(d.shopName)}&am=${d.billData.grandTotal.toFixed(2)}&cu=INR`;
+      const tempCanvas = document.createElement('canvas');
+      new QRious({ element: tempCanvas, value: upiLink, size: 260, background: '#ffffff', foreground: '#000000', level: 'M' });
+      
+      const qrSize = 180;
+      const qrX = (W - qrSize) / 2;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(qrX - 10, y - 10, qrSize + 20, qrSize + 20);
+      ctx.drawImage(tempCanvas, qrX, y, qrSize, qrSize);
+      tempCanvas.width = 0; tempCanvas.height = 0; // release canvas buffer memory immediately
+      y += qrSize + 28;
+      
+      ctx.fillStyle = '#000';
+      ctx.textAlign = 'center';
+      ctx.font = '14px "Inter", sans-serif';
+      ctx.fillText('Scan this QR code with your UPI app to pay', W / 2, y);
+      ctx.font = 'bold 16px "Inter", sans-serif';
+      ctx.fillText('THANK YOU FOR YOUR VISIT!', W / 2, y + 28);
+    } else {
+      y += 16;
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 16px "Inter", sans-serif';
+      ctx.fillText('THANK YOU FOR YOUR VISIT!', W / 2, y + 18);
+    }
+    
+    // --- 1-bit monochrome threshold for thermal printers ---
+    try {
+      const imgData = ctx.getImageData(0, 0, W, H);
+      const px = imgData.data;
+      for (let i = 0; i < px.length; i += 4) {
+        const avg = (px[i] + px[i+1] + px[i+2]) / 3;
+        const c = avg < 180 ? 0 : 255;
+        px[i] = c; px[i+1] = c; px[i+2] = c; px[i+3] = 255;
+      }
+      ctx.putImageData(imgData, 0, 0);
+    } catch (e) {
+      console.warn('[Thermal] Pixel threshold blocked:', e);
+    }
+  }
+  
+  // ------------------------------------------------------------------
+  //  A4 PROFESSIONAL INVOICE DRAWING
+  //  1240px wide, matching the desktop/iOS HTML A4 layout exactly:
+  //  - "INVOICE" heading on top-right, shop name on top-left
+  //  - Customer/Invoice details in a split grid
+  //  - Full-width item table
+  //  - Grand total section aligned to the right
+  // ------------------------------------------------------------------
+  function drawInvoiceA4(canvas, ctx, d) {
+    const W = 1240;
+    const padX = 90;  // 15mm left/right margin
+    const padY = 120; // 20mm top margin
+    const itemH = 50;
+    
+    const contentH = padY + 620 + (d.items.length * itemH);
+    const H = Math.max(1754, contentH);
+    
+    canvas.width = W;
+    canvas.height = H;
+    
+    // White background
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#000';
+    
+    // --- Nested Spacing/Rupee Helpers ---
+    function drawRupeeAmount(ctx, amount, x, y, align = 'right', isBold = false, fontSize = 18, isNegative = false) {
+      const absAmt = Math.abs(amount);
+      const amtStr = absAmt.toFixed(2);
+      ctx.font = `${isBold ? 'bold ' : ''}${fontSize}px "Inter", sans-serif`;
+      
+      ctx.save();
+      
+      const minusW = isNegative ? ctx.measureText('-').width : 0;
+      const rupeeW = ctx.measureText('₹').width;
+      const amtW = ctx.measureText(amtStr).width;
+      const totalW = minusW + rupeeW + amtW;
+      
+      let currentX;
+      if (align === 'right') {
+        currentX = x - totalW;
+      } else if (align === 'center') {
+        currentX = x - totalW / 2;
+      } else {
+        currentX = x;
+      }
+      
+      ctx.textAlign = 'left';
+      
+      if (isNegative) {
+        ctx.fillStyle = '#0f172a';
+        ctx.fillText('-', currentX, y);
+        currentX += minusW;
+      }
+      
+      // Restore Rupee Symbol color to solid black
+      ctx.fillStyle = '#0f172a';
+      ctx.fillText('₹', currentX, y);
+      currentX += rupeeW;
+      
+      ctx.fillStyle = '#0f172a';
+      ctx.fillText(amtStr, currentX, y);
+      
+      ctx.restore();
+    }
+    
+    function drawHeaderWithRupee(ctx, baseText, x, y) {
+      ctx.save();
+      ctx.font = 'bold 16px "Inter", sans-serif';
+      
+      const baseW = ctx.measureText(baseText + ' (').width;
+      const rupeeW = ctx.measureText('₹').width;
+      const closeW = ctx.measureText(')').width;
+      const totalW = baseW + rupeeW + closeW;
+      
+      const startX = x - totalW / 2;
+      
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#0f172a';
+      ctx.fillText(baseText + ' (', startX, y);
+      ctx.fillStyle = '#0f172a';
+      ctx.fillText('₹', startX + baseW, y);
+      ctx.fillStyle = '#0f172a';
+      ctx.fillText(')', startX + baseW + rupeeW, y);
+      ctx.restore();
+    }
+    
+    function drawHeaderWithRupeeRight(ctx, baseText, x, y) {
+      ctx.save();
+      ctx.font = 'bold 16px "Inter", sans-serif';
+      
+      const baseW = ctx.measureText(baseText + ' (').width;
+      const rupeeW = ctx.measureText('₹').width;
+      const closeW = ctx.measureText(')').width;
+      const totalW = baseW + rupeeW + closeW;
+      
+      const startX = x - totalW;
+      
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#0f172a';
+      ctx.fillText(baseText + ' (', startX, y);
+      ctx.fillStyle = '#0f172a';
+      ctx.fillText('₹', startX + baseW, y);
+      ctx.fillStyle = '#0f172a';
+      ctx.fillText(')', startX + baseW + rupeeW, y);
+      ctx.restore();
+    }
+    
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    
+    // Parse time in exact lowercase format like desktop (e.g. 10:03 am)
+    const hours = now.getHours();
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'pm' : 'am';
+    const displayHours = hours % 12 || 12;
+    const timeStr = `${displayHours}:${minutes} ${ampm}`;
+    
+    // === TOP ROW: Shop Name (left) + INVOICE heading (right) ===
+    ctx.font = 'bold 36px "Inter", sans-serif';
+    ctx.fillStyle = '#0f172a';
+    ctx.textAlign = 'left';
+    ctx.fillText(d.shopName.toUpperCase(), padX, padY + 36);
+    
+    // INVOICE title (right side)
+    ctx.textAlign = 'right';
+    ctx.font = 'bold 44px "Inter", sans-serif';
+    ctx.fillText('INVOICE', W - padX, padY + 36);
+    
+    // Sub-header details
+    ctx.font = '18px "Inter", sans-serif';
+    ctx.fillStyle = '#475569';
+    ctx.textAlign = 'left';
+    ctx.fillText(d.shopAddress, padX, padY + 70);
+    ctx.fillText(`Phone: ${d.shopPhone}`, padX, padY + 95);
+    
+    ctx.textAlign = 'right';
+    ctx.font = 'bold 20px "Inter", sans-serif';
+    ctx.fillText(`Invoice No: ${d.invoiceNum}`, W - padX, padY + 70);
+    
+    // === CUSTOMER/INVOICE DETAILS GRID ===
+    const gridTop = padY + 130;
+    const gridBottom = padY + 270;
+    
+    // Grid top boundary line
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padX, gridTop); ctx.lineTo(W - padX, gridTop); ctx.stroke();
+    
+    // Grid Details text
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 18px "Inter", sans-serif';
+    ctx.fillText('Billed To (Customer Detail):', padX, gridTop + 36);
+    
+    ctx.font = '18px "Inter", sans-serif';
+    ctx.fillStyle = '#475569';
+    ctx.fillText(`Customer Name: ${d.custName}`, padX, gridTop + 68);
+    ctx.fillText(`Customer Phone: ${d.custPhone}`, padX, gridTop + 94);
+    
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 18px "Inter", sans-serif';
+    ctx.fillText('Invoice Details:', W - padX, gridTop + 36);
+    
+    ctx.font = '18px "Inter", sans-serif';
+    ctx.fillStyle = '#475569';
+    ctx.fillText(`Date: ${dateStr}`, W - padX, gridTop + 68);
+    ctx.fillText(`Time: ${timeStr}`, W - padX, gridTop + 94);
+    ctx.fillText('Status: ', W - padX, gridTop + 120); // matching desktop layout exactly
+    
+    // Grid bottom boundary line
+    ctx.beginPath(); ctx.moveTo(padX, gridBottom); ctx.lineTo(W - padX, gridBottom); ctx.stroke();
+    
+    // === TABLE HEADER ===
+    const tableTop = gridBottom + 45;
+    
+    // Background fill (very light desktop th background)
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(padX, tableTop, W - (padX * 2), 42);
+    
+    // Header borders (exactly mimicking the browser table th styling)
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padX, tableTop); ctx.lineTo(W - padX, tableTop); ctx.stroke();
+    
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(padX, tableTop + 42); ctx.lineTo(W - padX, tableTop + 42); ctx.stroke();
+    
+    // Header column labels
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 16px "Inter", sans-serif';
+    ctx.fillText('ITEM DESCRIPTION', padX + 16, tableTop + 28);
+    
+    ctx.textAlign = 'center';
+    ctx.fillText('QTY', W / 2 - 80, tableTop + 28);
+    
+    // Custom blue Rupee in header columns
+    drawHeaderWithRupee(ctx, 'UNIT PRICE', W / 2 + 100, tableTop + 28);
+    drawHeaderWithRupeeRight(ctx, 'TOTAL AMOUNT', W - padX - 16, tableTop + 28);
+    
+    // === TABLE ROWS ===
+    let y = tableTop + 42;
+    d.items.forEach((item) => {
+      // Background remains transparent/white for rows as in desktop print
+
+      ctx.fillStyle = '#334155';
+      ctx.font = '18px "Inter", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(item.name, padX + 16, y + 32);
+      
+      ctx.textAlign = 'center';
+      ctx.fillText(`${item.qty}`, W / 2 - 80, y + 32);
+      
+      // Draw Rupee Amounts with blue symbols
+      drawRupeeAmount(ctx, item.price, W / 2 + 100, y + 32, 'center', false, 18);
+      drawRupeeAmount(ctx, item.price * item.qty, W - padX - 16, y + 32, 'right', true, 18);
+      
+      // Bottom row border
+      ctx.strokeStyle = '#f1f5f9';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(padX, y + itemH); ctx.lineTo(W - padX, y + itemH); ctx.stroke();
+      
+      y += itemH;
+    });
+    
+    // === TOTALS & PAYMENT SECTION (Side-by-side matching desktop) ===
+    y += 45;
+    const totalsX = W - padX - 350;
+    
+    // totals section drawn on the right (UPI QR block removed as requested)
+    
+    // Draw Totals on the right
+    ctx.textAlign = 'left';
+    ctx.font = '18px "Inter", sans-serif';
+    ctx.fillStyle = '#475569';
+    
+    let totalsY = y;
+    // Subtotal
+    ctx.fillText('Subtotal:', totalsX, totalsY);
+    drawRupeeAmount(ctx, d.billData.subtotal, W - padX, totalsY, 'right', false, 18);
+    totalsY += 30;
+    
+    // Discount
+    if (d.billData.savings > 0) {
+      ctx.textAlign = 'left';
+      ctx.fillText('Discount:', totalsX, totalsY);
+      drawRupeeAmount(ctx, d.billData.savings, W - padX, totalsY, 'right', false, 18, true);
+      totalsY += 30;
+    }
+    
+    // Grand total divider line
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(totalsX, totalsY - 6);
+    ctx.lineTo(W - padX, totalsY - 6);
+    ctx.stroke();
+    
+    // Grand total
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 24px "Inter", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('Grand Total:', totalsX, totalsY + 24);
+    drawRupeeAmount(ctx, d.billData.grandTotal, W - padX, totalsY + 24, 'right', true, 28);
+    
+    // === FOOTER SECTION (At the absolute bottom matching media print) ===
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padX, H - 120);
+    ctx.lineTo(W - padX, H - 120);
+    ctx.stroke();
+    
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#000000';
+    ctx.font = '18px "Inter", sans-serif';
+    ctx.fillText('Thank you for your visit', W / 2, H - 75);
   }
 
   // --- Settings & Logs ---
@@ -2185,57 +2750,74 @@ document.addEventListener('DOMContentLoaded', () => {
       
       try {
         if (tx.note && (tx.note.startsWith('{') || tx.note.startsWith('['))) {
-          billData = JSON.parse(tx.note);
-          if (billData && billData.invoiceNum !== undefined) {
+          const parsed = JSON.parse(tx.note);
+          if (parsed && parsed.invoiceNum !== undefined) {
+            billData = parsed;
             isBill = true;
           }
         }
-      } catch (e) {}
-
-      let detailsHtml = '';
-      let badgeLabel = tx.status;
-      let badgeClass = 'status-badge-paid';
+      } catch (e) {
+        console.error('[Sales Log] Error parsing transaction JSON:', e);
+      }
       
-      if (isBill) {
-        badgeLabel = `Bill #${billData.invoiceNum}`;
-        badgeClass = 'status-badge-paid';
-        
-        const itemsListHtml = billData.items.map(item => `
-          <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 2px; color: var(--text-secondary);">
-            <span>• ${escapeHTML(item.name)} (x${escapeHTML(item.qty)})</span>
-            <span>₹${(item.price * item.qty).toFixed(2)}</span>
+      if (!billData) {
+        // Synthesize structured billData on the fly for flat payments
+        const shortTxId = tx.id ? tx.id.slice(-4).toUpperCase() : '0000';
+        billData = {
+          type: 'flat',
+          invoiceNum: shortTxId,
+          custName: '-',
+          custPhone: '-',
+          items: [{ name: 'TOTAL', qty: 1, price: tx.amount }],
+          discount: 0,
+          discountType: 'flat',
+          grandTotal: tx.amount,
+          subtotal: tx.amount,
+          savings: 0,
+          itemCount: 1
+        };
+      }
+
+      badgeLabel = `Bill #${billData.invoiceNum}`;
+      badgeClass = 'status-badge-paid';
+      
+      const itemsListHtml = billData.items.map(item => `
+        <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 2px; color: var(--text-secondary);">
+          <span>• ${escapeHTML(item.name)} (x${escapeHTML(item.qty)})</span>
+          <span>₹${(item.price * item.qty).toFixed(2)}</span>
+        </div>
+      `).join('');
+      
+      detailsHtml = `
+        <div class="history-item-details" style="display: none; margin-top: 10px; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 10px; user-select: text;">
+          <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; line-height: 1.4;">
+            <strong>Bill Details (Invoice #${escapeHTML(billData.invoiceNum)})</strong><br>
+            Customer: <span style="color:#fff;" class="details-cust-name">${escapeHTML(billData.custName)}</span> | Phone: <span style="color:#fff;" class="details-cust-phone">${escapeHTML(billData.custPhone)}</span>
           </div>
-        `).join('');
-        
-        detailsHtml = `
-          <div class="history-item-details" style="display: none; margin-top: 10px; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 10px; user-select: text;">
-            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; line-height: 1.4;">
-              <strong>Bill Details (Invoice #${escapeHTML(billData.invoiceNum)})</strong><br>
-              Customer: <span style="color:#fff;">${escapeHTML(billData.custName)}</span> | Phone: <span style="color:#fff;">${escapeHTML(billData.custPhone)}</span>
-            </div>
-            <div style="margin-bottom: 8px;">
-              ${itemsListHtml}
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: bold; margin-bottom: 10px; color: #fff;">
-              <span>Total Paid:</span>
-              <span style="color: var(--color-emerald)">₹${billData.grandTotal.toFixed(2)}</span>
-            </div>
+          <div style="margin-bottom: 8px;">
+            ${itemsListHtml}
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: bold; margin-bottom: 10px; color: #fff;">
+            <span>Total Paid:</span>
+            <span style="color: var(--color-emerald)">₹${billData.grandTotal.toFixed(2)}</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <button class="btn btn-secondary history-print-btn" style="padding: 8px 12px; font-size: 11px; width: 100%; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; border-color: rgba(59, 130, 246, 0.25); color: #93c5fd; background: rgba(59, 130, 246, 0.03);">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+              </svg>
+              Print Bill / Receipt
+            </button>
             <button class="btn btn-emerald resend-whatsapp-btn" style="padding: 8px 12px; font-size: 11px; width: 100%; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px;">
               <svg fill="currentColor" viewBox="0 0 24 24" style="width: 14px; height: 14px;">
                 <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.513 2.262 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.66.986 3.292 1.48 4.957 1.48 5.397 0 9.783-4.382 9.786-9.778.001-2.614-1.015-5.07-2.861-6.918C16.68 2.087 14.225.996 11.61.996 6.21.996 1.825 5.378 1.822 10.774c-.001 1.761.472 3.42 1.368 4.949L2.2 21.066l4.447-1.912zm13.111-8.528c-.302-.152-1.791-.883-2.068-.984-.278-.102-.48-.152-.68.152-.2.304-.775.984-.95 1.186-.176.203-.351.228-.654.076-.303-.152-1.28-.471-2.438-1.503-.9-.802-1.507-1.793-1.684-2.097-.176-.304-.019-.469.132-.619.136-.134.303-.354.454-.531.152-.177.202-.304.303-.506.101-.203.05-.38-.025-.531-.076-.152-.68-1.636-.931-2.24-.246-.59-.496-.51-.68-.52-.177-.008-.38-.01-.58-.01s-.525.075-.8.38c-.275.304-1.05 1.028-1.05 2.508 0 1.48 1.075 2.913 1.225 3.116.15.203 2.115 3.23 5.125 4.53.716.31 1.275.495 1.71.635.72.23 1.375.197 1.892.12.576-.086 1.79-.73 2.043-1.436.253-.706.253-1.313.177-1.438-.076-.126-.278-.203-.58-.354z"/>
-              </svg>
-              Resend Bill to WhatsApp
-            </button>
-          </div>
-        `;
-      } else {
-        detailsHtml = `
-          <div class="history-item-details" style="display: none; margin-top: 10px; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 10px; font-size: 11px; color: var(--text-muted);">
-            <strong>Transaction Note:</strong> ${escapeHTML(displayNote)}
-          </div>
-        `;
-      }
-
+            </svg>
+            Send Bill to WhatsApp
+          </button>
+        </div>
+      </div>
+      `;
+ 
       const isCashTx = tx.upiId === 'cash' || tx.bankName === 'Cash Payment';
       const displayBankName = isAdminModeActive ? tx.bankName : (isCashTx ? 'Cash' : 'Online');
       
@@ -2246,11 +2828,11 @@ document.addEventListener('DOMContentLoaded', () => {
           </svg>
         </button>
       ` : '';
-
-      const custTag = (isBill && billData && billData.custName) ? 
+ 
+      const custTag = (billData && billData.custName && billData.custName !== '-') ? 
         ` <span class="history-item-cust-tag" style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: rgba(99, 102, 241, 0.15); color: #818cf8; margin-left: 6px; font-weight: 500; display: inline-flex; align-items: center; vertical-align: middle; gap: 2px;">👤 ${escapeHTML(billData.custName)}</span>` : 
         '';
-
+ 
       item.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
           <div class="history-item-left">
@@ -2270,11 +2852,11 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
         ${detailsHtml}
       `;
-
+ 
       // Collapsible toggle handler
       item.addEventListener('click', (e) => {
-        // Prevent toggle if delete or resend buttons are clicked
-        if (e.target.closest('.history-item-delete') || e.target.closest('.resend-whatsapp-btn')) {
+        // Prevent toggle if delete, print, or resend buttons are clicked
+        if (e.target.closest('.history-item-delete') || e.target.closest('.resend-whatsapp-btn') || e.target.closest('.history-print-btn')) {
           return;
         }
         const detailsPanel = item.querySelector('.history-item-details');
@@ -2282,23 +2864,67 @@ document.addEventListener('DOMContentLoaded', () => {
           const isCollapsed = detailsPanel.style.display === 'none';
           detailsPanel.style.display = isCollapsed ? 'block' : 'none';
           item.style.background = isCollapsed ? 'rgba(255,255,255,0.03)' : '';
+          
+          // Dynamically adjust wrapper's max-height to accommodate open items!
+          const wrapper = historyListContainer.closest('.history-list-wrapper');
+          if (wrapper) {
+            const anyExpanded = Array.from(historyListContainer.querySelectorAll('.history-item-details'))
+              .some(el => el.style.display === 'block');
+            wrapper.style.maxHeight = anyExpanded ? '480px' : '200px';
+          }
+
+          if (isCollapsed) {
+            setTimeout(() => {
+              item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 100);
+          }
         }
       });
+ 
+      // Bind Print action
+      const printBtn = item.querySelector('.history-print-btn');
+      if (printBtn) {
+        printBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const txBank = (tx.upiId === 'cash' || tx.bankName === 'Cash Payment') ? CASH_PAYMENT : (bankAccounts.find(b => b.name === tx.bankName || b.upiId === tx.upiId) || bankAccounts[0] || CASH_PAYMENT);
+          showPrintLayoutModal(txBank, billData);
+        });
+      }
 
       // Bind WhatsApp Resend action
-      if (isBill) {
-        const resendBtn = item.querySelector('.resend-whatsapp-btn');
-        if (resendBtn) {
-          resendBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
+      const resendBtn = item.querySelector('.resend-whatsapp-btn');
+      if (resendBtn) {
+        resendBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          
+          const txBank = (tx.upiId === 'cash' || tx.bankName === 'Cash Payment') ? CASH_PAYMENT : (bankAccounts.find(b => b.name === tx.bankName || b.upiId === tx.upiId) || bankAccounts[0] || CASH_PAYMENT);
+          
+          const executeShare = (finalName, finalPhone) => {
+            billData.custName = finalName;
+            billData.custPhone = finalPhone;
+            tx.note = JSON.stringify(billData);
             
-            // Generate receipt directly using parsed billData to completely prevent async race conditions
-            const txBank = (tx.upiId === 'cash' || tx.bankName === 'Cash Payment') ? CASH_PAYMENT : (bankAccounts.find(b => b.name === tx.bankName || b.upiId === tx.upiId) || bankAccounts[0] || CASH_PAYMENT);
+            // Save updated transaction locally and queue database sync
+            localStorage.setItem('pos_history', JSON.stringify(transactionHistory));
+            enqueueSyncTask('pos_history', 'upsert', tx);
             
-            console.log('[Resend WhatsApp] Regenerating receipt for Invoice #', billData.invoiceNum);
+            // Re-render UI details inline
+            const nameSpan = item.querySelector('.details-cust-name');
+            const phoneSpan = item.querySelector('.details-cust-phone');
+            if (nameSpan) nameSpan.textContent = finalName;
+            if (phoneSpan) phoneSpan.textContent = finalPhone;
+            
             shareReceiptAsImage(txBank, billData);
-          });
-        }
+          };
+          
+          if (billData.custName === '-' || billData.custPhone === '-') {
+            showCustomerPromptModal(billData.custName, billData.custPhone, (finalName, finalPhone) => {
+              executeShare(finalName, finalPhone);
+            });
+          } else {
+            executeShare(billData.custName, billData.custPhone);
+          }
+        });
       }
 
       historyListContainer.appendChild(item);
@@ -2666,16 +3292,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       
-      // Ensure bank is selected from dropdown
       let bank = activeSelectedBank;
       if (billBankSelect) {
         const selectedBankId = billBankSelect.value;
         bank = getBankById(selectedBankId) || CASH_PAYMENT;
       }
-      
-      if (!bank) {
-        bank = CASH_PAYMENT;
-      }
+      if (!bank) bank = CASH_PAYMENT;
       
       const totals = calculateBillTotals();
       const currentInvoiceNum = localStorage.getItem('pos_invoice_counter') || '1';
@@ -2688,7 +3310,7 @@ document.addEventListener('DOMContentLoaded', () => {
         invoiceNum: currentInvoiceNum,
         custName: custName,
         custPhone: custPhone,
-        items: [...activeBillItems], // Clone active items array
+        items: [...activeBillItems],
         discount: discInputVal,
         discountType: billDiscountType.value,
         grandTotal: totals.grandTotal,
@@ -2697,39 +3319,80 @@ document.addEventListener('DOMContentLoaded', () => {
         itemCount: totals.itemCount
       };
       
-      const transactionNote = JSON.stringify(billData);
+      const runBillShare = (finalName, finalPhone) => {
+        billData.custName = finalName;
+        billData.custPhone = finalPhone;
+        const transactionNote = JSON.stringify(billData);
+        
+        shareReceiptAsImage(bank, billData);
+        
+        const nextInvoiceNum = parseInt(currentInvoiceNum) + 1;
+        localStorage.setItem('pos_invoice_counter', nextInvoiceNum.toString());
+        pushSettingsMetaToCloud();
+        
+        addTransaction(totals.grandTotal, bank, transactionNote, 'paid');
+        clearActiveBill();
+        window.location.hash = '#/pos';
+      };
       
-      // 1. Share crisp receipt image dynamically
-      shareReceiptAsImage(bank, billData);
+      if (custName === '-' || custPhone === '-') {
+        showCustomerPromptModal(custName, custPhone, (finalName, finalPhone) => {
+          // Update inputs in UI
+          if (billCustNameInput && finalName !== '-') billCustNameInput.value = finalName;
+          if (billCustPhoneInput && finalPhone !== '-') billCustPhoneInput.value = finalPhone;
+          runBillShare(finalName, finalPhone);
+        });
+      } else {
+        runBillShare(custName, custPhone);
+      }
+    };
+  }
+
+  if (billPrintBtn) {
+    billPrintBtn.onclick = () => {
+      if (activeBillItems.length === 0) {
+        alert('Please add at least one item to the bill first.');
+        return;
+      }
       
-      // 2. Increment global invoice counter in localStorage sequentially!
-      const nextInvoiceNum = parseInt(currentInvoiceNum) + 1;
-      localStorage.setItem('pos_invoice_counter', nextInvoiceNum.toString());
+      let bank = activeSelectedBank;
+      if (billBankSelect) {
+        const selectedBankId = billBankSelect.value;
+        bank = getBankById(selectedBankId) || CASH_PAYMENT;
+      }
+      if (!bank) bank = CASH_PAYMENT;
       
-      // 3. Synchronize sequential invoice counter increments to cloud database in real-time
-      pushSettingsMetaToCloud();
+      const totals = calculateBillTotals();
+      const currentInvoiceNum = localStorage.getItem('pos_invoice_counter') || '1';
+      const custName = (billCustNameInput && billCustNameInput.value.trim()) || '-';
+      const custPhone = (billCustPhoneInput && billCustPhoneInput.value.trim()) || '-';
+      const discInputVal = parseFloat(billDiscountInput.value) || 0;
       
-      // 4. Save transaction to history logs
-      addTransaction(totals.grandTotal, bank, transactionNote, 'paid');
+      const billData = {
+        type: 'bill',
+        invoiceNum: currentInvoiceNum,
+        custName: custName,
+        custPhone: custPhone,
+        items: [...activeBillItems],
+        discount: discInputVal,
+        discountType: billDiscountType.value,
+        grandTotal: totals.grandTotal,
+        subtotal: totals.subtotal,
+        savings: totals.savings,
+        itemCount: totals.itemCount
+      };
       
-      // 5. Clear active bill inputs and items
-      clearActiveBill();
-      
-      // 6. Redirect to main POS home keypad view as requested by user
-      window.location.hash = '#/pos';
+      showPrintLayoutModal(bank, billData);
     };
   }
 
   if (qrWhatsappBtn) {
     qrWhatsappBtn.onclick = () => {
-      if (!activeSelectedBank) return;
-      
+      const bank = activeSelectedBank || CASH_PAYMENT;
       const amount = parseFloat(currentAmountStr);
       const currentInvoiceNum = localStorage.getItem('pos_invoice_counter') || '1';
       
       let billData = null;
-      let transactionNote = '';
-      
       if (isBillModeActive) {
         const totals = calculateBillTotals();
         const custName = (billCustNameInput && billCustNameInput.value.trim()) || '-';
@@ -2749,27 +3412,13 @@ document.addEventListener('DOMContentLoaded', () => {
           savings: totals.savings,
           itemCount: totals.itemCount
         };
-        transactionNote = JSON.stringify(billData);
       } else {
-        // Direct flat POS mode: prompt cashier for customer details sequentially
-        let custName = '-';
-        let custPhone = '-';
-        const phoneInput = prompt('Enter Customer WhatsApp Number (optional, leave blank to skip):');
-        if (phoneInput === null) return; // Cancelled
-        if (phoneInput.trim() !== '') {
-          custPhone = phoneInput.trim();
-          const nameInput = prompt('Enter Customer Name (optional):');
-          if (nameInput !== null && nameInput.trim() !== '') {
-            custName = nameInput.trim();
-          }
-        }
-        
         billData = {
           type: 'flat',
           invoiceNum: currentInvoiceNum,
-          custName: custName,
-          custPhone: custPhone,
-          items: [{ name: 'Retail Sale', qty: 1, price: amount }],
+          custName: '-',
+          custPhone: '-',
+          items: [{ name: 'TOTAL', qty: 1, price: amount }],
           discount: 0,
           discountType: 'flat',
           grandTotal: amount,
@@ -2777,32 +3426,84 @@ document.addEventListener('DOMContentLoaded', () => {
           savings: 0,
           itemCount: 1
         };
-        transactionNote = JSON.stringify(billData);
       }
       
-      // 1. Share crisp receipt image dynamically
-      shareReceiptAsImage(activeSelectedBank, billData);
+      const runQrShare = (finalName, finalPhone) => {
+        billData.custName = finalName;
+        billData.custPhone = finalPhone;
+        const transactionNote = JSON.stringify(billData);
+        
+        shareReceiptAsImage(bank, billData);
+        
+        const nextInvoiceNum = parseInt(currentInvoiceNum) + 1;
+        localStorage.setItem('pos_invoice_counter', nextInvoiceNum.toString());
+        pushSettingsMetaToCloud();
+        
+        addTransaction(billData.grandTotal, bank, transactionNote, 'paid');
+        
+        if (isBillModeActive) {
+          clearActiveBill();
+          isBillModeActive = false;
+        }
+        
+        currentAmountStr = '0';
+        activeSelectedBank = null;
+        window.location.hash = '#/pos';
+      };
       
-      // 2. Increment global invoice counter in localStorage sequentially!
-      const nextInvoiceNum = parseInt(currentInvoiceNum) + 1;
-      localStorage.setItem('pos_invoice_counter', nextInvoiceNum.toString());
+      if (billData.custName === '-' || billData.custPhone === '-') {
+        showCustomerPromptModal(billData.custName, billData.custPhone, (finalName, finalPhone) => {
+          runQrShare(finalName, finalPhone);
+        });
+      } else {
+        runQrShare(billData.custName, billData.custPhone);
+      }
+    };
+  }
+
+  if (qrPrintBtn) {
+    qrPrintBtn.onclick = () => {
+      const bank = activeSelectedBank || CASH_PAYMENT;
+      const amount = parseFloat(currentAmountStr);
+      const currentInvoiceNum = localStorage.getItem('pos_invoice_counter') || '1';
       
-      // 3. Synchronize sequential invoice counter increments to cloud database in real-time
-      pushSettingsMetaToCloud();
-      
-      // 4. Save transaction to history logs
-      addTransaction(billData.grandTotal, activeSelectedBank, transactionNote, 'paid');
-      
-      // 5. Clear active bill inputs and items (if in bill mode)
+      let billData = null;
       if (isBillModeActive) {
-        clearActiveBill();
-        isBillModeActive = false;
+        const totals = calculateBillTotals();
+        const custName = (billCustNameInput && billCustNameInput.value.trim()) || '-';
+        const custPhone = (billCustPhoneInput && billCustPhoneInput.value.trim()) || '-';
+        const discInputVal = parseFloat(billDiscountInput.value) || 0;
+        
+        billData = {
+          type: 'bill',
+          invoiceNum: currentInvoiceNum,
+          custName: custName,
+          custPhone: custPhone,
+          items: [...activeBillItems],
+          discount: discInputVal,
+          discountType: billDiscountType.value,
+          grandTotal: totals.grandTotal,
+          subtotal: totals.subtotal,
+          savings: totals.savings,
+          itemCount: totals.itemCount
+        };
+      } else {
+        billData = {
+          type: 'flat',
+          invoiceNum: currentInvoiceNum,
+          custName: '-',
+          custPhone: '-',
+          items: [{ name: 'TOTAL', qty: 1, price: amount }],
+          discount: 0,
+          discountType: 'flat',
+          grandTotal: amount,
+          subtotal: amount,
+          savings: 0,
+          itemCount: 1
+        };
       }
       
-      // 6. Reset values & redirect to main POS home keypad view
-      currentAmountStr = '0';
-      activeSelectedBank = null;
-      window.location.hash = '#/pos';
+      showPrintLayoutModal(bank, billData);
     };
   }
 
