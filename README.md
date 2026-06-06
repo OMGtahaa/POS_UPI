@@ -27,6 +27,7 @@ An offline-first Point of Sale terminal that generates UPI QR codes for instant 
 2. Serve the files with any static server (or just open `index.html`)
 3. For cloud sync, create a [Supabase](https://supabase.com) project and update the URL and anon key in `js/app.js`
 4. Enable Row Level Security on your Supabase tables
+5. Note: the default password is 1234 for the admin page in settings of this app 
 
 ## Usage
 
